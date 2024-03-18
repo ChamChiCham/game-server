@@ -2,5 +2,7 @@ client/.vs
 client/x64
 server/.vs
 server/x64
-UP!!/.vs
-UP!!/x64
+client_basic/x64
+client_basic/.vs
+server_basic/x64
+server_basic/.vs

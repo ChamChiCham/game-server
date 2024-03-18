@@ -139,6 +139,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="CNetworkMgr.cpp" />
     <ClCompile Include="CShaderMgr.cpp" />
     <ClCompile Include="CShapeDataMgr.cpp" />
     <ClCompile Include="Main.cpp" />
@@ -146,6 +147,7 @@
     <ClCompile Include="Struct.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CNetworkMgr.h" />
     <ClInclude Include="CShaderMgr.h" />
     <ClInclude Include="CShapeDataMgr.h" />
     <ClInclude Include="Define.h" />

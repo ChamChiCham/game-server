@@ -25,6 +25,9 @@
     <Filter Include="callback">
       <UniqueIdentifier>{79589b0c-8236-4e60-bcac-23afebaf527e}</UniqueIdentifier>
     </Filter>
+    <Filter Include="CNetworkMgr">
+      <UniqueIdentifier>{22332d61-7ebb-4f40-a2c9-5a9eec01c643}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp">
@@ -42,6 +45,9 @@
     <ClCompile Include="Resource.cpp">
       <Filter>resource</Filter>
     </ClCompile>
+    <ClCompile Include="CNetworkMgr.cpp">
+      <Filter>CNetworkMgr</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="CShaderMgr.h">
@@ -58,6 +64,9 @@
     </ClInclude>
     <ClInclude Include="Resource.h">
       <Filter>resource</Filter>
+    </ClInclude>
+    <ClInclude Include="CNetworkMgr.h">
+      <Filter>CNetworkMgr</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

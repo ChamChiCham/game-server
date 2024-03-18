@@ -1,125 +1,325 @@
-//#include <iostream>
-//#include <WS2tcpip.h>
-//using namespace std;
-//#pragma comment (lib, "WS2_32.LIB")
-//const char* SERVER_ADDR = "127.0.0.1";
-//const short SERVER_PORT = 4000;
-//const int BUFSIZE = 256;
-//int main()
-//{
-//	// Level 0: lnit
-//	// «—±€ º≥¡§
-//	wcout.imbue(locale("korean"));
-//
-//	// Winsock √ ±‚»≠
-//	WSADATA WSAData;
-//	WSAStartup(MAKEWORD(2, 0), &WSAData);
-//
-//	// Level 1:	Socket
-//	// º“ƒœ ª˝º∫
-//	SOCKET s_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, 0, 0, 0);
-//
-//	// Level 2:	Connect
-//	// º≠πˆ ¡÷º“ º≥¡§
-//	SOCKADDR_IN server_addr;
-//	ZeroMemory(&server_addr, sizeof(server_addr));
-//	server_addr.sin_family = AF_INET;
-//	// htons(): setting little endian, big endian
-//	server_addr.sin_port = htons(SERVER_PORT);
-//	inet_pton(AF_INET, SERVER_ADDR, &server_addr.sin_addr);
-//
-//	// º≠πˆø° ø¨∞·
-//	connect(s_socket, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr));
-//	
-//	// Level 3:	Send/Recv
-//	// ∏ﬁΩ√¡ˆ ¿¸º€
-//	for (;;) {
-//
-//		// Send
-//		char buf[BUFSIZE];
-//		cout << "Enter Message : ";  cin.getline(buf, BUFSIZE);
-//		DWORD sent_byte;
-//		WSABUF mybuf;
-//		mybuf.buf = buf; mybuf.len = static_cast<ULONG>(strlen(buf)) + 1;
-//		WSASend(234, &mybuf, 1, &sent_byte, 0, 0, 0);
-//
-//		// Recv
-//		char recv_buf[BUFSIZE];
-//		WSABUF mybuf_r;
-//		mybuf_r.buf = recv_buf; mybuf_r.len = BUFSIZE;
-//		DWORD recv_byte;
-//		DWORD recv_flag = 0;
-//		WSARecv(s_socket, &mybuf_r, 1, &recv_byte, &recv_flag, 0, 0);
-//
-//		cout << "Server Sent [" << recv_byte << "bytes] : " << recv_buf << endl;
-//	}
-//
-//
-//	// Level 4:	Close
-//	// º“ƒœ ¥›±‚
-//	WSACleanup();
-//}
+Ôªø#include <gl/glew.h>
+#include <gl/freeglut.h>
+#include <gl/freeglut_ext.h>
+
+#include <glm/glm.hpp>
+#include <glm/ext.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <iostream>
-#include <WS2tcpip.h>
-#pragma comment (lib, "WS2_32.LIB")
+#include <fstream>
+#include <vector>
+#include <array>
 
-constexpr short PORT = 4'000;
-constexpr char ADDR[] = "127.0.0.1";
-constexpr int BUFSIZE = 256;
+#include "CShaderMgr.h"
+#include "CShapeDataMgr.h"
+#include "Define.h"
+#include "Struct.h"
+#include "Resource.h"
 
-void print_error(const char* msg, int err_no)
+
+// --
+// declare callback function 
+// --
+
+namespace cb
 {
-	WCHAR* msg_buf;
-	FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, NULL, err_no,
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), reinterpret_cast<LPWSTR>(&msg_buf), 0, NULL);
-	std::cout << msg;
-	std::wcout << L"ø°∑Ø: " << msg_buf << std::endl;
-	while (true);
-	LocalFree(msg_buf);
+	GLvoid Display();
+	GLvoid Reshape(int w, int h);
+	GLvoid GameLoop(int value);
+	GLvoid Mouse(int button, int state, int x, int y);
+	GLvoid Keyboard(unsigned char key, int x, int y);
+	GLvoid SpecialKeys(int key, int x, int y);
+	GLvoid SpecialKeysUp(int key, int x, int y);
+	GLvoid Motion(int x, int y);
+	GLvoid KeyboardUp(unsigned char key, int x, int y);
 }
 
-int main()
+
+
+
+class CWindowMgr
 {
-	std::wcout.imbue(std::locale("korean"));
+private:
 
-	WSADATA wsadata;
-	WSAStartup(MAKEWORD(2, 0), &wsadata);
+	static CWindowMgr* instance;
 
-	SOCKET server_s{ WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, 0) };
-	SOCKADDR_IN server_a;
-	server_a.sin_family = AF_INET;
-	server_a.sin_port = htons(PORT);
-	inet_pton(AF_INET, ADDR, &server_a.sin_addr);
-	connect(server_s, reinterpret_cast<sockaddr*>(&server_a), sizeof(server_a));
-	while (true) {
+	CWindowMgr()
+	{}
+	~CWindowMgr()
+	{
+		if (!instance) delete instance;
+	}
 
+public:
 
-		char buf[BUFSIZE];
-		std::cout << "Enter Message: " << std::endl;
-		std::cin.getline(buf, BUFSIZE);
-		WSABUF wsabuf[1];
-		wsabuf[0].buf = buf;
-		wsabuf[0].len = static_cast<int>(strlen(buf) + 1);
-		if (wsabuf[0].len == 1) {
-			break;
+	CWindowMgr(const CWindowMgr& other) = delete;
+	CWindowMgr& operator=(const CWindowMgr& other) = delete;
+
+	static CWindowMgr* getInst()
+	{
+		if (!instance) {
+			instance = new CWindowMgr();
 		}
-		DWORD sent_size;
-		WSASend(server_s, &wsabuf[0], 1, &sent_size, 0, 0, 0);
+		return instance;
+	}
 
-		wsabuf[0].buf = buf;
-		wsabuf[0].len = static_cast<int>(BUFSIZE);
-		DWORD recv_size;
-		DWORD recv_flag{ 0 };
-		int res = WSARecv(server_s, &wsabuf[0], 1, &recv_size, &recv_flag, nullptr, nullptr);
-		if (0 != res) {
-			print_error("WSARecv", WSAGetLastError());
+
+private:
+
+	// default member variable
+	SView		view;
+	glm::mat4	proj = glm::mat4(1.f);
+	glm::vec3	background_color = glm::vec3(0.f, 0.f, 0.f);
+
+
+	// ---
+	// process member variable
+	// ---
+
+	std::vector<CShape> shapes;
+	
+	std::pair<int, int> queen_pos{0, 0};
+	char queen_status{ 0 };
+
+public:
+
+	// --
+	// Basic func
+	// --
+
+	void init(int& argc, char** argv)
+	{
+		// init GLUT
+		glutInit(&argc, argv);
+		glutInitDisplayMode(WINDOW_DISPLAYMODE);
+		glutInitWindowPosition(WINDOW_POSITION_X, WINDOW_POSITION_Y);
+		glutInitWindowSize(WINDOW_SIZE_X, WINDOW_SIZE_Y);
+		glutCreateWindow(WINDOW_TITLE);
+
+		// init GLEW
+		glewExperimental = GL_TRUE;
+		if (glewInit() != GLEW_OK)
+		{
+			std::cerr << "Unable to initialize GLEW" << std::endl;
+			exit(EXIT_FAILURE);
 		}
-		for (DWORD i{ 0 }; i < recv_size; ++i) {
-			std::cout << buf[i];
-		}
-		std::cout << std::endl;
+		else
+			std::cout << "GLEW Initialized\n";
+
+		CShaderMgr::getInst()->init();
+
+
+		// set cb func
+		glutDisplayFunc(cb::Display);
+		glutReshapeFunc(cb::Reshape);
+		glutMouseFunc(cb::Mouse);
+		glutKeyboardFunc(cb::Keyboard);
+		glutKeyboardUpFunc(cb::KeyboardUp);
+		glutTimerFunc(10, cb::GameLoop, 1);
+		glutMotionFunc(cb::Motion);
+		glutSpecialFunc(cb::SpecialKeys);
+		glutSpecialUpFunc(cb::SpecialKeysUp);
+
+		// --
+		// create shape data
+		// --
+		CShape board;
+		board.setData(SHAPE_SQUARE);
+		board.setTexture(IMAGE_BOARD);
+		board.setColor(1.f, 1.f, 1.f);
+		board.scale(0, 2.f, 2.f, 2.f);
+		shapes.push_back(board);
+
+		CShape queen;
+		queen.setData(SHAPE_SQUARE);
+		queen.setColor(1.f, 1.f, 1.f);
+		queen.setTexture(IMAGE_QUEEN);
+		queen.scale(0, 0.25f, 0.25f, 0.25f);
+		queen.translate(1, -0.125f - 0.75f, 1.f, -0.125f - 0.75f);
+		shapes.push_back(queen);
+		
+
+		for (auto& shape : shapes)
+			shape.updateBuffer();
+
+		
+		// --
+		// set basic variable
+		// --
+
+
+		proj = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, 0.0f, 10.0f);
+
+		// Ï¥àÍ∏∞ Ïπ¥Î©îÎùº ÏúÑÏπò Ï°∞Ï†ï
+		view.eye = glm::vec3(0.0f, 5.0f, 0.0f);
+		view.at = glm::vec3(0.f, 0.f, 0.0f);
+		view.up = glm::vec3(0.f, 0.f, -1.f);
+
+		// --
+		// explain
+		// --
+
+		std::cout << "---------------------" << std::endl;
+		std::cout << "Ïª§ÏÑú ÌÇ§: Îßê Ïù¥Îèô" << std::endl;
+		std::cout << "---------------------" << std::endl;
+
+	}
+
+	// --
+	// process function
+	// --
+
+	// --
+	// define cb func
+	// --
+
+	void Display()
+	{
+		glClearColor(background_color.r, background_color.g, background_color.b, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+		int mode = GL_TRIANGLES;
+
+		glEnable(GL_DEPTH_TEST);
+
+		for (auto& shape : shapes)
+			shape.draw(view, proj, mode);
+
+		glutSwapBuffers();
+	}
+
+	void Mouse(const int _button, const int _state, const int _x, const int _y)
+	{
+
+	}
+
+	void Motion(const int _x, const int _y)
+	{
+
+	}
+
+	void Keyboard(const unsigned char _key, const int _x, const int _y)
+	{
+	
+	}
+
+	void KeyboardUp(const unsigned char _key, const int _x, const int _y)
+	{
 		
 	}
-	closesocket(server_s);
-	WSACleanup();
+
+	void SpecialKeys(const int _key, const int _x, const int _y)
+	{
+		switch (_key)
+		{
+		case GLUT_KEY_UP:
+			break;
+
+		case GLUT_KEY_DOWN:
+			break;
+
+		case GLUT_KEY_LEFT:
+			break;
+
+		case GLUT_KEY_RIGHT:
+			break;
+		}
+	}
+
+	void SpecialKeysUp(const int _key, const int _x, const int _y)
+	{
+		switch (_key)
+		{
+		case GLUT_KEY_UP:
+			break;
+		case GLUT_KEY_DOWN:
+			break;
+		case GLUT_KEY_LEFT:
+			break;
+		case GLUT_KEY_RIGHT:
+			break;
+		}
+	}
+
+	// --
+	// process func
+	// --
+
+
+	void updateState()
+	{
+	}
+
+
+	void run()
+	{
+		glutMainLoop();
+	}
+
+};
+
+CWindowMgr* CWindowMgr::instance = nullptr;
+
+
+// (CALLBACK) Display screen
+GLvoid cb::Display()
+{
+	CWindowMgr::getInst()->Display();
+}
+
+// (CALLBACK) Reset Viewport
+GLvoid cb::Reshape(int w, int h)
+{
+	glViewport(0, 0, w, h);
+}
+
+// (CALLBACK) Mouse click event
+GLvoid cb::Mouse(int button, int state, int x, int y)
+{
+	CWindowMgr::getInst()->Mouse(button, state, x, y);
+}
+
+GLvoid cb::Keyboard(unsigned char key, int x, int y)
+{
+	CWindowMgr::getInst()->Keyboard(key, x, y);
+}
+
+GLvoid cb::Motion(int x, int y)
+{
+	CWindowMgr::getInst()->Motion(x, y);
+}
+
+GLvoid cb::SpecialKeys(int key, int x, int y)
+{
+	CWindowMgr::getInst()->SpecialKeys(key, x, y);
+}
+
+GLvoid cb::SpecialKeysUp(int key, int x, int y)
+{
+	CWindowMgr::getInst()->SpecialKeysUp(key, x, y);
+}
+
+GLvoid cb::KeyboardUp(unsigned char key, int x, int y)
+{
+	CWindowMgr::getInst()->KeyboardUp(key, x, y);
+}
+
+// (CALLBACK) Main Loop
+GLvoid cb::GameLoop(int value)
+{
+
+	// Game State Update
+	CWindowMgr::getInst()->updateState();
+
+	// render (Display Ìï®Ïàò Ìò∏Ï∂ú)
+	glutPostRedisplay();
+
+	glutTimerFunc(10, GameLoop, 1);
+}
+
+int main(int argc, char** argv)
+{
+	CWindowMgr::getInst()->init(argc, argv);
+	CWindowMgr::getInst()->run();
 }
