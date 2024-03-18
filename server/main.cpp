@@ -25,7 +25,7 @@ void print_error(const char* msg, int err_no)
 
 const std::string handle_data(const char* recv, const DWORD length)
 {
-	std::string send;
+	std::string send = "N";
 	if (length < 2);
 	else if (recv[0] == 'U') {
 		if (recv[1] == 'U') {
@@ -131,7 +131,6 @@ int main()
 			std::cout << "End program." << std::endl;
 			break;
 		}
-		std::cout << "Success to recv data." << std::endl;
 		auto result = handle_data(buf, recv_size);
 		// send
 		strcpy_s(buf, sizeof(buf), result.c_str());
@@ -139,7 +138,6 @@ int main()
 		wsabuf[0].len = static_cast<int>(strlen(buf) + 1);
 		DWORD sent_size;
 		WSASend(client_s, &wsabuf[0], 1, &sent_size, 0, 0, 0);
-		std::cout << "Success to send data." << std::endl;
 
 	}
 

@@ -31,6 +31,10 @@ enum
 
 	// Shader Program
 	SHADER_TEXTURE_PROGRAM = 0,
+
+	NETWORK_PORT = 4'000,
+	NETWORK_BUFFER_SIZE = 256,
+
 	
 };
 

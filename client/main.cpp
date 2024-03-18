@@ -16,6 +16,7 @@
 #include "Define.h"
 #include "Struct.h"
 #include "Resource.h"
+#include "CNetworkMgr.h"
 
 
 // --
@@ -67,6 +68,9 @@ public:
 
 private:
 
+	// manager
+	CNetworkMgr network_mgr;
+
 	// default member variable
 	SView		view;
 	glm::mat4	proj = glm::mat4(1.f);
@@ -90,6 +94,10 @@ public:
 
 	void init(int& argc, char** argv)
 	{
+		network_mgr.setServerAddress();
+		network_mgr.init();
+
+
 		// init GLUT
 		glutInit(&argc, argv);
 		glutInitDisplayMode(WINDOW_DISPLAYMODE);
@@ -108,6 +116,7 @@ public:
 			std::cout << "GLEW Initialized\n";
 
 		CShaderMgr::getInst()->init();
+
 
 
 		// set cb func
@@ -211,35 +220,68 @@ public:
 
 	void SpecialKeys(const int _key, const int _x, const int _y)
 	{
+		std::string send = "D";
 		switch (_key)
 		{
 		case GLUT_KEY_UP:
+			send.push_back('U');
 			break;
 
 		case GLUT_KEY_DOWN:
+			send.push_back('D');
 			break;
 
 		case GLUT_KEY_LEFT:
+			send.push_back('L');
 			break;
 
 		case GLUT_KEY_RIGHT:
+			send.push_back('R');
 			break;
+		}
+
+		auto result = network_mgr.sendMessage(send);
+		if (result[0] == 'N') { return; }
+		if (result[0] == 'M') {
+			switch (result[1])
+			{
+			case 'U':
+				shapes[1].translate(1, 0.f, 0.f, -0.25f);
+				break;
+			case 'D':
+				shapes[1].translate(1, 0.f, 0.f, 0.25f);
+				break;
+			case 'L':
+				shapes[1].translate(1, -0.25f, 0.f, 0.f);
+				break;
+			case 'R':
+				shapes[1].translate(1, 0.25f, 0.f, 0.f);
+				break;
+			default:
+				break;
+			}
 		}
 	}
 
 	void SpecialKeysUp(const int _key, const int _x, const int _y)
 	{
+		std::string send = "U";
 		switch (_key)
 		{
 		case GLUT_KEY_UP:
+			send.push_back('U');
 			break;
 		case GLUT_KEY_DOWN:
+			send.push_back('D');
 			break;
 		case GLUT_KEY_LEFT:
+			send.push_back('L');
 			break;
 		case GLUT_KEY_RIGHT:
+			send.push_back('R');
 			break;
 		}
+		network_mgr.sendMessage(send);
 	}
 
 	// --
