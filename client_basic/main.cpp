@@ -30,10 +30,15 @@ void read_n_send()
 void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 	LPWSAOVERLAPPED pwsaover, DWORD sendflag)
 {
-	for (DWORD i = 0; i < recv_size; ++i)
-		std::cout << buf[i];
-	std::cout << std::endl;
-	read_n_send();
+	int p_size = 0;
+	while (recv_size >= p_size) {
+		int m_size = buf[0 + p_size];
+		std::cout << "Player [" << static_cast<int>(buf[1 + p_size]) << "]: ";
+		for (DWORD i = 0; i < m_size; ++i)
+			std::cout << buf[i + p_size + 2];
+		std::cout << std::endl;
+		p_size = p_size + m_size;
+	}
 }
 
 void CALLBACK send_callback(DWORD err, DWORD sent_size,
