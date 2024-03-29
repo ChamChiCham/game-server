@@ -13,6 +13,7 @@ char buf[BUFSIZE];
 WSAOVERLAPPED wsaover;
 void CALLBACK send_callback(DWORD, DWORD, LPWSAOVERLAPPED, DWORD);
 
+// process function
 void read_n_send()
 {
 	std::cout << "Enter Message : ";
@@ -27,6 +28,7 @@ void read_n_send()
 	WSASend(server_s, wsabuf, 1, nullptr, 0, &wsaover, send_callback);
 }
 
+// recv_callback
 void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 	LPWSAOVERLAPPED pwsaover, DWORD sendflag)
 {
@@ -42,6 +44,7 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 	read_n_send();
 }
 
+// send callback
 void CALLBACK send_callback(DWORD err, DWORD sent_size,
 	LPWSAOVERLAPPED pwsaover, DWORD sendflag)
 {
@@ -51,20 +54,29 @@ void CALLBACK send_callback(DWORD err, DWORD sent_size,
 	WSARecv(server_s, wsabuf, 1, nullptr, &recv_flag, pwsaover, recv_callback);
 }
 
+
 int main()
 {
+	// init
 	std::wcout.imbue(std::locale("korean"));
 	WSADATA WSAData;
 	WSAStartup(MAKEWORD(2, 0), &WSAData);
+
+	// server socket
 	server_s = WSASocket(AF_INET, SOCK_STREAM,
 		IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+
+	// connect
 	SOCKADDR_IN server_a;
 	server_a.sin_family = AF_INET;
 	server_a.sin_port = htons(PORT);
 	inet_pton(AF_INET, SERVER_ADDR, &server_a.sin_addr);
 	connect(server_s, reinterpret_cast<sockaddr*>(&server_a), sizeof(server_a));
+
+
 	read_n_send();
 	while (false == bshutdown) {
+		// 이벤트를 읽음.
 		SleepEx(0, TRUE);
 	}
 	closesocket(server_s);

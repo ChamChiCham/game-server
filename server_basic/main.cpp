@@ -10,13 +10,19 @@ bool b_shutdown = false;
 
 class SESSION;
 
+// { client Overlapped pointer : ID }
 std::unordered_map<LPWSAOVERLAPPED, int> g_session_map;
+
+// { ID : session }
 std::unordered_map<int, SESSION> g_players;
 
 void CALLBACK send_callback(DWORD, DWORD, LPWSAOVERLAPPED, DWORD);
 void CALLBACK recv_callback(DWORD, DWORD, LPWSAOVERLAPPED, DWORD);
 void print_error(const char* msg, int err_no);
 
+/**
+*  client에게 send하기 위해 동적으로 생성하는 send. 
+*/
 class EXP_OVER
 {
 public:
@@ -35,6 +41,9 @@ public:
 	}
 };
 
+/**
+* server에서 client에게 recv와 send를 해주는 session.
+*/
 class SESSION {
 	char buf[BUFSIZE];
 	WSABUF wsabuf[1];
@@ -51,6 +60,8 @@ public:
 		exit(-1);
 	}
 	~SESSION() { closesocket(client_s); }
+
+	// recv
 	void do_recv()
 	{
 		DWORD recv_flag = 0;
@@ -63,6 +74,7 @@ public:
 		}
 	}
 
+	// send
 	void do_send(int s_id, char* mess, int recv_size)
 	{
 		auto b = new EXP_OVER(s_id, mess, recv_size);
@@ -72,6 +84,7 @@ public:
 		}
 	}
 
+	// handle message
 	void print_message(DWORD recv_size)
 	{
 		int my_id = g_session_map[&over];
@@ -80,7 +93,8 @@ public:
 			std::cout << buf[i];
 		std::cout << std::endl;
 	}
-
+	
+	// send message to all client
 	void broadcast(int m_size)
 	{
 		for (auto& p : g_players)
@@ -88,6 +102,7 @@ public:
 	}
 };
 
+// 에러가 났을때 멈줘주는 함수.
 void print_error(const char* msg, int err_no)
 {
 	WCHAR* msg_buf;
@@ -101,6 +116,7 @@ void print_error(const char* msg, int err_no)
 	LocalFree(msg_buf);
 }
 
+// send 완료 후 실행되는 callback
 void CALLBACK send_callback(DWORD err, DWORD sent_size,
 	LPWSAOVERLAPPED pover, DWORD recv_flag)
 {
@@ -111,6 +127,7 @@ void CALLBACK send_callback(DWORD err, DWORD sent_size,
 	delete b;
 }
 
+// recv 완료 후 실행되는 callback
 void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 	LPWSAOVERLAPPED pover, DWORD recv_flag)
 {
@@ -133,16 +150,25 @@ int main()
 
 	WSADATA WSAData;
 	WSAStartup(MAKEWORD(2, 0), &WSAData);
-
+	
+	// create socker
 	SOCKET server_s = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+	
+	// bind
 	SOCKADDR_IN server_a;
 	server_a.sin_family = AF_INET;
 	server_a.sin_port = htons(PORT);
 	server_a.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
 	bind(server_s, reinterpret_cast<sockaddr*>(&server_a), sizeof(server_a));
+	
+	// listen
 	listen(server_s, SOMAXCONN);
+
+
 	int addr_size = sizeof(server_a);
 	int id = 0;
+
+	// accept client socket
 	while (false == b_shutdown) {
 		SOCKET client_s = WSAAccept(server_s, reinterpret_cast<sockaddr*>(&server_a), &addr_size, nullptr, 0);
 		g_players.try_emplace(id, client_s, id);
