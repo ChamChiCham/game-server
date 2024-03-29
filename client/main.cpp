@@ -179,6 +179,13 @@ public:
 	// process function
 	// --
 
+	void move(int x, int y)
+	{
+		shapes[1].clearMatrix(1);
+		shapes[1].translate(1, -0.125f - 0.75f, 1.f, -0.125f - 0.75f);
+		shapes[1].translate(1, 0.25f * static_cast<float>(x), 0.f, 0.25 * static_cast<float>(y));
+	}
+
 	// --
 	// define cb func
 	// --
@@ -243,23 +250,7 @@ public:
 		auto result = network_mgr.sendMessage(send);
 		if (result[0] == 'N') { return; }
 		if (result[0] == 'M') {
-			switch (result[1])
-			{
-			case 'U':
-				shapes[1].translate(1, 0.f, 0.f, -0.25f);
-				break;
-			case 'D':
-				shapes[1].translate(1, 0.f, 0.f, 0.25f);
-				break;
-			case 'L':
-				shapes[1].translate(1, -0.25f, 0.f, 0.f);
-				break;
-			case 'R':
-				shapes[1].translate(1, 0.25f, 0.f, 0.f);
-				break;
-			default:
-				break;
-			}
+			move(result[1] - '0', result[2] - '0');
 		}
 	}
 

@@ -46,31 +46,37 @@ const std::string handle_data(const char* recv, const DWORD length)
 			queen_status |= 0x01;
 			if (queen_pos.second > 0) {
 				queen_pos.second--;
-				send = "MU";
+				send = "M";
 			}
 		}
 		else if (recv[1] == 'D' && !(queen_status & 0x02)) {
 			queen_status |= 0x02;
 			if (queen_pos.second < 7) {
 				queen_pos.second++;
-				send = "MD";
+				send = "M";
 			}
 		}
 		else if (recv[1] == 'L' && !(queen_status & 0x04)) {
-			queen_status |= 0x01;
+			queen_status |= 0x04;
 			if (queen_pos.first > 0) {
 				queen_pos.first--;
-				send = "ML";
+				send = "M";
 			}
 		}
 		else if (recv[1] == 'R' && !(queen_status & 0x08)) {
 			queen_status |= 0x08;
 			if (queen_pos.first < 7) {
 				queen_pos.first++;
-				send = "MR";
+				send = "M";
 			}
 		}
 	}
+
+	if (send[0] == 'M') {
+		send.push_back(queen_pos.first + '0');
+		send.push_back(queen_pos.second + '0');
+	}
+
 	return send;
 }
 
