@@ -5,6 +5,7 @@
 
 constexpr short PORT = 4000;
 constexpr int BUFSIZE = 256;
+
 bool b_shutdown = false;
 
 class SESSION;
@@ -16,20 +17,20 @@ void CALLBACK send_callback(DWORD, DWORD, LPWSAOVERLAPPED, DWORD);
 void CALLBACK recv_callback(DWORD, DWORD, LPWSAOVERLAPPED, DWORD);
 void print_error(const char* msg, int err_no);
 
-class EXP_OVER {
+class EXP_OVER
+{
 public:
 	WSAOVERLAPPED over;
 	WSABUF wsabuf[1];
 	char buf[BUFSIZE];
-
-public:
-	EXP_OVER(int m_id, char* mess, int m_size) {
+	EXP_OVER(int s_id, char* mess, int m_size)
+	{
 		ZeroMemory(&over, sizeof(over));
 		wsabuf[0].buf = buf;
 		wsabuf[0].len = m_size + 2;
 
 		buf[0] = m_size + 2;
-		buf[1] = m_id;
+		buf[1] = s_id;
 		memcpy(buf + 2, mess, m_size);
 	}
 };
@@ -50,7 +51,6 @@ public:
 		exit(-1);
 	}
 	~SESSION() { closesocket(client_s); }
-
 	void do_recv()
 	{
 		DWORD recv_flag = 0;
@@ -107,8 +107,8 @@ void CALLBACK send_callback(DWORD err, DWORD sent_size,
 	if (0 != err) {
 		print_error("WSASend", WSAGetLastError());
 	}
-	auto p = reinterpret_cast<EXP_OVER*>(pover);
-	delete p;
+	auto b = reinterpret_cast<EXP_OVER*>(pover);
+	delete b;
 }
 
 void CALLBACK recv_callback(DWORD err, DWORD recv_size,
@@ -117,13 +117,11 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 	if (0 != err) {
 		print_error("WSARecv", WSAGetLastError());
 	}
-
 	int my_id = g_session_map[pover];
 	if (0 == recv_size) {
 		g_players.erase(my_id);
 		return;
 	}
-
 	g_players[my_id].print_message(recv_size);
 	g_players[my_id].broadcast(recv_size);
 	g_players[my_id].do_recv();
@@ -131,28 +129,21 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 
 int main()
 {
-	// setting
 	std::wcout.imbue(std::locale("korean"));
+
 	WSADATA WSAData;
 	WSAStartup(MAKEWORD(2, 0), &WSAData);
 
-	// create socket
 	SOCKET server_s = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
-
-	// bind socket address
 	SOCKADDR_IN server_a;
 	server_a.sin_family = AF_INET;
 	server_a.sin_port = htons(PORT);
 	server_a.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
 	bind(server_s, reinterpret_cast<sockaddr*>(&server_a), sizeof(server_a));
-
-	// listen
 	listen(server_s, SOMAXCONN);
 	int addr_size = sizeof(server_a);
 	int id = 0;
-
 	while (false == b_shutdown) {
-		// accept (overlapped i/o)
 		SOCKET client_s = WSAAccept(server_s, reinterpret_cast<sockaddr*>(&server_a), &addr_size, nullptr, 0);
 		g_players.try_emplace(id, client_s, id);
 		g_players[id++].do_recv();
