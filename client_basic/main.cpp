@@ -34,12 +34,10 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 {
 	int p_size = 0;
 	while (recv_size > p_size) {
-		int m_size = buf[0 + p_size];
-		std::cout << "Player [" << static_cast<int>(buf[1 + p_size]) << "] : ";
-		for (DWORD i = 0; i < m_size; ++i)
-			std::cout << buf[i + p_size + 2];
+		for (DWORD i = 0; i < 3; ++i)
+			std::cout << buf[i + p_size];
 		std::cout << std::endl;
-		p_size = p_size + m_size;
+		p_size = p_size + 3;
 	}
 	read_n_send();
 }
@@ -63,8 +61,7 @@ int main()
 	WSAStartup(MAKEWORD(2, 0), &WSAData);
 
 	// server socket
-	server_s = WSASocket(AF_INET, SOCK_STREAM,
-		IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+	server_s = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 
 	// connect
 	SOCKADDR_IN server_a;
@@ -76,7 +73,7 @@ int main()
 
 	read_n_send();
 	while (false == bshutdown) {
-		// 이벤트를 읽음.
+		// 이벤트를 읽음. (임시방편)
 		SleepEx(0, TRUE);
 	}
 	closesocket(server_s);

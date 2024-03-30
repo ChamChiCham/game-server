@@ -43,33 +43,6 @@ class CWindowMgr
 {
 private:
 
-	static CWindowMgr* instance;
-
-	CWindowMgr()
-	{}
-	~CWindowMgr()
-	{
-		if (!instance) delete instance;
-	}
-
-public:
-
-	CWindowMgr(const CWindowMgr& other) = delete;
-	CWindowMgr& operator=(const CWindowMgr& other) = delete;
-
-	static CWindowMgr* getInst()
-	{
-		if (!instance) {
-			instance = new CWindowMgr();
-		}
-		return instance;
-	}
-
-
-private:
-
-	// manager
-	CNetworkMgr network_mgr;
 
 	// default member variable
 	SView		view;
@@ -247,11 +220,7 @@ public:
 			break;
 		}
 
-		auto result = network_mgr.sendMessage(send);
-		if (result[0] == 'N') { return; }
-		if (result[0] == 'M') {
-			move(result[1] - '0', result[2] - '0');
-		}
+		network_mgr.doSend(send);
 	}
 
 	void SpecialKeysUp(const int _key, const int _x, const int _y)
@@ -272,16 +241,31 @@ public:
 			send.push_back('R');
 			break;
 		}
-		network_mgr.sendMessage(send);
+		network_mgr.doSend(send);
 	}
 
 	// --
 	// process func
 	// --
 
+	void processMessage()
+	{
+		char* message{ network_mgr.popMessage() };
+		while (message != nullptr) {
+			if (message[0] == 'Q') {
+				PostQuitMessage(0);
+			}
+			if (message[0] == 'M') {
+				queen_pos = std::make_pair<int, int>(message[1], message[2]);
+				move(queen_pos.first, queen_pos.second);
+			}
+			message = network_mgr.popMessage();
+		}
+	}
 
 	void updateState()
 	{
+
 	}
 
 
@@ -292,13 +276,13 @@ public:
 
 };
 
-CWindowMgr* CWindowMgr::instance = nullptr;
+CWindowMgr window_mgr;
 
 
 // (CALLBACK) Display screen
 GLvoid cb::Display()
 {
-	CWindowMgr::getInst()->Display();
+	window_mgr.Display();
 }
 
 // (CALLBACK) Reset Viewport
@@ -310,40 +294,43 @@ GLvoid cb::Reshape(int w, int h)
 // (CALLBACK) Mouse click event
 GLvoid cb::Mouse(int button, int state, int x, int y)
 {
-	CWindowMgr::getInst()->Mouse(button, state, x, y);
+	window_mgr.Mouse(button, state, x, y);
 }
 
 GLvoid cb::Keyboard(unsigned char key, int x, int y)
 {
-	CWindowMgr::getInst()->Keyboard(key, x, y);
+	window_mgr.Keyboard(key, x, y);
 }
 
 GLvoid cb::Motion(int x, int y)
 {
-	CWindowMgr::getInst()->Motion(x, y);
+	window_mgr.Motion(x, y);
 }
 
 GLvoid cb::SpecialKeys(int key, int x, int y)
 {
-	CWindowMgr::getInst()->SpecialKeys(key, x, y);
+	window_mgr.SpecialKeys(key, x, y);
 }
 
 GLvoid cb::SpecialKeysUp(int key, int x, int y)
 {
-	CWindowMgr::getInst()->SpecialKeysUp(key, x, y);
+	window_mgr.SpecialKeysUp(key, x, y);
 }
 
 GLvoid cb::KeyboardUp(unsigned char key, int x, int y)
 {
-	CWindowMgr::getInst()->KeyboardUp(key, x, y);
+	window_mgr.KeyboardUp(key, x, y);
 }
 
 // (CALLBACK) Main Loop
 GLvoid cb::GameLoop(int value)
 {
+	SleepEx(0, TRUE);
+	// process
+	window_mgr.processMessage();
 
 	// Game State Update
-	CWindowMgr::getInst()->updateState();
+	window_mgr.updateState();
 
 	// render (Display 함수 호출)
 	glutPostRedisplay();
@@ -353,6 +340,6 @@ GLvoid cb::GameLoop(int value)
 
 int main(int argc, char** argv)
 {
-	CWindowMgr::getInst()->init(argc, argv);
-	CWindowMgr::getInst()->run();
+	window_mgr.init(argc, argv);
+	window_mgr.run();
 }

@@ -3,6 +3,8 @@
 #include "CNetworkMgr.h"
 #include "Define.h"
 
+CNetworkMgr network_mgr;
+
 void print_error(const char* msg, int err_no)
 {
 	WCHAR* msg_buf;
@@ -13,7 +15,6 @@ void print_error(const char* msg, int err_no)
 	while (true);
 	LocalFree(msg_buf);
 }
-
 
 void CNetworkMgr::init()
 {
@@ -31,9 +32,9 @@ void CNetworkMgr::init()
 	WSAStartup(MAKEWORD(2, 0), &wsadata);
 	std::cout << "Success to Start up Window Socket." << std::endl;
 
-	// Level 1:	Socket
+	// Level 1:	Overlapped Socket
 	// 소켓 생성
-	server_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, 0);
+	server_socket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
 	std::cout << "Success to create Socket." << std::endl;
 
 	// Level 2:	Connect
@@ -45,33 +46,99 @@ void CNetworkMgr::init()
 	std::cout << "Connecting Server..." << std::endl;
 	connect(server_socket, reinterpret_cast<sockaddr*>(&server_a), sizeof(server_a));
 	std::cout << "Success to connect Server." << std::endl;
+
+	// Level 3: Overlapped Recv
+	// 서버로부터 recv 받기
+
+	doRecv();
+
 }
 
-std::string CNetworkMgr::sendMessage(std::string_view msg)
-{
-	// Send
-	char buf[NETWORK_BUFFER_SIZE];
-	strcpy_s(buf, sizeof(buf), msg.data());
-	WSABUF wsabuf[1];
-	wsabuf[0].buf = buf;
-	wsabuf[0].len = static_cast<ULONG>(strlen(buf) + 1);
-	if (wsabuf[0].len == 1) {
-		return std::string{ "Q" };
-	}
-	DWORD sent_size;
-	WSASend(server_socket, &wsabuf[0], 1, &sent_size, 0, 0, 0);
+// ----
+// send
+// ----
 
-	// Recv
-	wsabuf[0].buf = buf;
-	wsabuf[0].len = static_cast<ULONG>(NETWORK_BUFFER_SIZE);
-	DWORD recv_size;
-	DWORD recv_flag{ 0 };
-	int res = WSARecv(server_socket, &wsabuf[0], 1, &recv_size, &recv_flag, nullptr, nullptr);
+
+// send to server
+void CNetworkMgr::doSend(std::string_view msg)
+{
+	strcpy_s(send_exp.buf, sizeof(send_exp.buf), msg.data());
+	send_exp.wsabuf[0].buf = send_exp.buf;
+	send_exp.wsabuf[0].len = static_cast<ULONG>(strlen(send_exp.buf)) + 1;
+
+	ZeroMemory(&send_exp.over, sizeof(send_exp.over));
+	WSASend(server_socket, send_exp.wsabuf, 1, nullptr, 0, &send_exp.over, send_callback);
+}
+
+// send 완료시 callback 함수.
+void CALLBACK send_callback(DWORD err, DWORD sent_size,
+	LPWSAOVERLAPPED pwsaover, DWORD sendflag)
+{
+	if (0 != err) {
+		print_error("WSASend", WSAGetLastError());
+	}
+}
+
+
+// ----
+// recv
+// ----
+
+// recv function
+void CNetworkMgr::doRecv()
+{
+	DWORD recv_flag = 0;
+	recv_exp.wsabuf[0].buf = recv_exp.buf;
+	recv_exp.wsabuf[0].len = NETWORK_BUFFER_SIZE;
+	ZeroMemory(&recv_exp.over, sizeof(recv_exp.over));
+	int res = WSARecv(server_socket, recv_exp.wsabuf, 1, nullptr, &recv_flag, &recv_exp.over, recv_callback);
+
 	if (0 != res) {
+		int err_no = WSAGetLastError();
+		if (WSA_IO_PENDING != err_no)
+			print_error("WSARecv", WSAGetLastError());
+	}
+}
+
+
+// recv 완료 후 실행되는 callback
+void CALLBACK recv_callback(DWORD err, DWORD recv_size,
+	LPWSAOVERLAPPED pover, DWORD recv_flag)
+{
+	if (0 != err) {
 		print_error("WSARecv", WSAGetLastError());
 	}
 
-	return std::string{buf};
+	// --
+	// recv process
+	// --
+ 
+
+	// push message
+	network_mgr.pushMessage();
+
+	// repeat recv
+	network_mgr.doRecv();
+}
+
+// 메시지를 메시지 큐에 전달
+void CNetworkMgr::pushMessage()
+{
+	message_queue.push(recv_exp.buf);
+}
+
+// 메시지 window에 전달
+char* CNetworkMgr::popMessage()
+{
+	if (message_queue.empty()) {
+		return nullptr;
+	}
+	else {
+
+		char* result{ message_queue.front() };
+		message_queue.pop();
+		return result;
+	}
 }
 
 void CNetworkMgr::setServerAddress()
@@ -79,6 +146,7 @@ void CNetworkMgr::setServerAddress()
 	std::cout << "Input server address: " << std::endl;
 	std::cin >> server_address;
 }
+
 
 CNetworkMgr::~CNetworkMgr()
 {
