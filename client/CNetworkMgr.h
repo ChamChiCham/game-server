@@ -33,6 +33,8 @@ private:
 	EXP_OVER send_exp;
 	EXP_OVER recv_exp;
 
+	int id{-1};
+
 	std::queue<std::vector<char>> message_queue;
 
 public:
@@ -41,11 +43,13 @@ public:
 	void init();
 	void setServerAddress();
 
-	void doSend(std::string_view);
+	void doSend(std::vector<char>);
 	void doRecv();
 
 	void pushMessage();
 	const std::vector<char> popMessage();
+
+	void setId();
 
 };
 

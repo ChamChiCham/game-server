@@ -58,11 +58,16 @@ void CNetworkMgr::init()
 
 
 // send to server
-void CNetworkMgr::doSend(std::string_view msg)
+void CNetworkMgr::doSend(std::vector<char> msg)
 {
-	strcpy_s(send_exp.buf, sizeof(send_exp.buf), msg.data());
+
 	send_exp.wsabuf[0].buf = send_exp.buf;
-	send_exp.wsabuf[0].len = static_cast<ULONG>(strlen(send_exp.buf)) + 1;
+	send_exp.wsabuf[0].len = msg.size() + 2;
+
+	send_exp.buf[0] = msg.size() + 2;
+	send_exp.buf[1] = static_cast<char>(id);
+
+	memcpy(send_exp.buf + 2, msg.data(), msg.size());
 
 	ZeroMemory(&send_exp.over, sizeof(send_exp.over));
 	WSASend(server_socket, send_exp.wsabuf, 1, nullptr, 0, &send_exp.over, send_callback);
@@ -107,6 +112,8 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 		print_error("WSARecv", WSAGetLastError());
 	}
 
+	network_mgr.setId();
+
 	// --
 	// recv process
 	// --
@@ -135,6 +142,12 @@ const std::vector<char> CNetworkMgr::popMessage()
 		message_queue.pop();
 		return result;
 	}
+}
+
+void CNetworkMgr::setId()
+{
+	if (id != -1) { return; }
+	id = recv_exp.buf[1];
 }
 
 void CNetworkMgr::setServerAddress()

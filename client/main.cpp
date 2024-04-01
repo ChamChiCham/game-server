@@ -186,7 +186,7 @@ public:
 
 	void SpecialKeys(const int _key, const int _x, const int _y)
 	{
-		std::string send = "D";
+		std::vector<char> send{ 'D' };
 		switch (_key)
 		{
 		case GLUT_KEY_UP:
@@ -211,7 +211,7 @@ public:
 
 	void SpecialKeysUp(const int _key, const int _x, const int _y)
 	{
-		std::string send = "U";
+		std::vector<char> send{ 'U' };
 		switch (_key)
 		{
 		case GLUT_KEY_UP:
