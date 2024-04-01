@@ -87,6 +87,8 @@ public:
 			if (WSA_IO_PENDING != err_no)
 				print_error("WSARecv", WSAGetLastError());
 		}
+		std::cout << "recv" << buf[0] << buf[1] << buf[2] << std::endl;
+
 	}
 
 	// send
@@ -97,6 +99,7 @@ public:
 		if (0 != res) {
 			print_error("WSASend", WSAGetLastError());
 		}
+		std::cout << "recv" << buf[0] << buf[1] << buf[2] << std::endl;
 	}
 
 	void do_send(int s_id)
@@ -170,7 +173,10 @@ public:
 	void broadcast(int data_id)
 	{
 		for (auto& p : g_players) {
+			// data_id의 정보로 버퍼를 설정한다.
 			p.second.setSendBuffer(data_id);
+
+			// 보내본다.
 			p.second.do_send(g_session_map[&over]);
 		}
 	}
@@ -223,12 +229,16 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 	// TODO: 정보 처리
 	auto pos = queen.pos;
 
+	// 메시지를 처리
 	g_players[my_id].proccessMessage();
 
+	// 위치가 달라졌다면
 	if (pos != queen.pos) {
+		// 모든 client한테 알려준다.
 		g_players[my_id].broadcast(my_id);
 	}
 
+	// 다시 recv 실행
 	g_players[my_id].do_recv();
 }
 
@@ -260,9 +270,19 @@ int main()
 	while (false == b_shutdown) {
 		SOCKET client_s = WSAAccept(server_s, reinterpret_cast<sockaddr*>(&server_a), &addr_size, nullptr, 0);
 		g_players.try_emplace(id, client_s, id);
+
+		// default 퀸 객체 생성
 		g_queens[id] = Queen{};
 
+		// 새로운 객체 알려주기 
 		g_players[id].broadcast(id);
+
+		//// client가 처음 들어왔을 때 모든 player의 정보를 해당 client에 전달
+		//for (auto& p : g_players) {
+		//	g_players[id].do_send(p.first);
+		//}
+
+		// recv 실행
 		g_players[id++].do_recv();
 	}
 	g_players.clear();

@@ -10,6 +10,7 @@
 #include <fstream>
 #include <vector>
 #include <array>
+#include <unordered_map>
 
 #include "CShaderMgr.h"
 #include "CShapeDataMgr.h"
@@ -55,9 +56,10 @@ private:
 	// ---
 
 	std::vector<CShape> shapes;
+
+	std::unordered_map<int, Queen> queen_table;
 	
-	std::pair<int, int> queen_pos{0, 0};
-	char queen_status{ 0 };
+
 
 public:
 
@@ -113,14 +115,6 @@ public:
 		board.scale(0, 2.f, 2.f, 2.f);
 		shapes.push_back(board);
 
-		CShape queen;
-		queen.setData(SHAPE_SQUARE);
-		queen.setColor(1.f, 1.f, 1.f);
-		queen.setTexture(IMAGE_QUEEN);
-		queen.scale(0, 0.25f, 0.25f, 0.25f);
-		queen.translate(1, -0.125f - 0.75f, 1.f, -0.125f - 0.75f);
-		shapes.push_back(queen);
-		
 
 		for (auto& shape : shapes)
 			shape.updateBuffer();
@@ -149,17 +143,6 @@ public:
 	}
 
 	// --
-	// process function
-	// --
-
-	void move(int x, int y)
-	{
-		shapes[1].clearMatrix(1);
-		shapes[1].translate(1, -0.125f - 0.75f, 1.f, -0.125f - 0.75f);
-		shapes[1].translate(1, 0.25f * static_cast<float>(x), 0.f, 0.25 * static_cast<float>(y));
-	}
-
-	// --
 	// define cb func
 	// --
 
@@ -174,6 +157,9 @@ public:
 
 		for (auto& shape : shapes)
 			shape.draw(view, proj, mode);
+
+		for (auto& queen : queen_table)
+			queen.second.draw(view, proj, mode);
 
 		glutSwapBuffers();
 	}
@@ -251,14 +237,22 @@ public:
 	void processMessage()
 	{
 		std::vector<char> message{ network_mgr.popMessage() };
+
 		while (!message.empty()) {
+			int id = static_cast<int>(message[1]);
+
+			if (queen_table.find(id) == queen_table.end()) {
+				queen_table[id] = Queen{};
+			}
+
+			Queen& target = queen_table[id];
+
 			switch (message[2]) {
 			case 'Q':
 				PostQuitMessage(0);
 				break;
 			case 'M':
-				queen_pos = std::make_pair<int, int>(message[3], message[4]);
-				move(queen_pos.first, queen_pos.second);
+				target.move(message[3], message[4]);
 				break;
 			default:
 				break;

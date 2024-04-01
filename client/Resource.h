@@ -69,12 +69,11 @@ class Queen
 {
 private:
 	CShape shape;
-	std::pair<unsigned char, unsigned char> pos{};
-	unsigned char status{};
 
 public:
 
-	Queen()
-	void draw();
+	Queen();
+	void draw(const SView& _view, const glm::mat4& _proj, const int _mode);
+	void move(const unsigned char x, const unsigned char y);
 
 };

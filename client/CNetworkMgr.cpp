@@ -120,7 +120,7 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 // 메시지를 메시지 큐에 전달
 void CNetworkMgr::pushMessage()
 {
-	message_queue.push(std::vector<char>{recv_exp.buf, recv_exp.buf + 3});
+	message_queue.push(std::vector<char>{recv_exp.buf, recv_exp.buf + recv_exp.buf[0]});
 }
 
 // 메시지 window에 전달

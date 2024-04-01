@@ -228,3 +228,24 @@ void CShape::setMatrix(CShape& _other)
 {
 	mats = _other.mats;
 }
+
+Queen::Queen()
+{
+	shape.setData(SHAPE_SQUARE);
+	shape.setColor(1.f, 1.f, 1.f);
+	shape.setTexture(IMAGE_QUEEN);
+	shape.scale(0, 0.25f, 0.25f, 0.25f);
+	shape.translate(1, -0.125f - 0.75f, 1.f, -0.125f - 0.75f);
+	shape.updateBuffer();
+}
+
+void Queen::draw(const SView& _view, const glm::mat4& _proj, const int _mode)
+{
+	shape.draw(_view,_proj,_mode);
+}
+
+void Queen::move(const unsigned char x, const unsigned char y)
+{
+	shape.clearMatrix(2);
+	shape.translate(2, 0.25f * static_cast<float>(x), 0.f, 0.25 * static_cast<float>(y));
+}
