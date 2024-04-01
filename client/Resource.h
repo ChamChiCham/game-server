@@ -64,3 +64,17 @@ public:
 	void clearMatrix(const int _idx);
 	void setMatrix(CShape& _other);
 };
+
+class Queen
+{
+private:
+	CShape shape;
+	std::pair<unsigned char, unsigned char> pos{};
+	unsigned char status{};
+
+public:
+
+	Queen()
+	void draw();
+
+};

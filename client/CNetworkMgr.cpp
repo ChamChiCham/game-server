@@ -49,9 +49,7 @@ void CNetworkMgr::init()
 
 	// Level 3: Overlapped Recv
 	// 서버로부터 recv 받기
-
 	doRecv();
-
 }
 
 // ----
@@ -112,8 +110,6 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 	// --
 	// recv process
 	// --
- 
-
 	// push message
 	network_mgr.pushMessage();
 
@@ -124,18 +120,18 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 // 메시지를 메시지 큐에 전달
 void CNetworkMgr::pushMessage()
 {
-	message_queue.push(recv_exp.buf);
+	message_queue.push(std::vector<char>{recv_exp.buf, recv_exp.buf + 3});
 }
 
 // 메시지 window에 전달
-char* CNetworkMgr::popMessage()
+const std::vector<char> CNetworkMgr::popMessage()
 {
 	if (message_queue.empty()) {
-		return nullptr;
+		return std::vector<char>{};
 	}
 	else {
 
-		char* result{ message_queue.front() };
+		std::vector<char> result{ message_queue.front() };
 		message_queue.pop();
 		return result;
 	}

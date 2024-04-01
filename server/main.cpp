@@ -22,8 +22,15 @@ void CALLBACK recv_callback(DWORD, DWORD, LPWSAOVERLAPPED, DWORD);
 void print_error(const char* msg, int err_no);
 
 
-std::pair<unsigned char, unsigned char> queen_pos{0, 0};
-char queen_status;
+struct Queen {
+	std::pair<unsigned char, unsigned char> pos{};
+	unsigned char status{};
+};
+
+// { ID : Data }
+std::unordered_map<int, Queen> g_queens;
+
+
 
 /**
 *  client에게 send하기 위해 overlapped/wsabuf/buf을 묶은 자료형.
@@ -38,9 +45,12 @@ public:
 	{
 		ZeroMemory(&over, sizeof(over));
 		wsabuf[0].buf = buf;
-		wsabuf[0].len = m_size;
+		wsabuf[0].len = m_size + 2;
 
-		memcpy(buf, mess, m_size);
+		buf[0] = m_size + 2;
+		buf[1] = s_id;
+
+		memcpy(buf + 2, mess, m_size);
 	}
 };
 
@@ -87,7 +97,6 @@ public:
 		if (0 != res) {
 			print_error("WSASend", WSAGetLastError());
 		}
-		std::cout << "Send: " << mess[0] << (int)mess[1] << (int)mess[2] << std::endl;
 	}
 
 	void do_send(int s_id)
@@ -101,62 +110,69 @@ public:
 
 	void proccessMessage()
 	{
+		int id = g_session_map[&over];
+		Queen queen = g_queens[id];
+
 		if (buf[0] == 'U') {
 			if (buf[1] == 'U') {
-				queen_status &= ~0x01;
+				queen.status &= ~0x01;
 			}
 			else if (buf[1] == 'D') {
-				queen_status &= ~0x02;
+				queen.status &= ~0x02;
 			}
 			else if (buf[1] == 'L') {
-				queen_status &= ~0x04;
+				queen.status &= ~0x04;
 			}
 			else if (buf[1] == 'R') {
-				queen_status &= ~0x08;
+				queen.status &= ~0x08;
 			}
 		}
 		else if (buf[0] == 'D') {
-			if (buf[1] == 'U' && !(queen_status & 0x01)) {
-				queen_status |= 0x01;
-				if (queen_pos.second > 0) {
-					queen_pos.second--;
+			if (buf[1] == 'U' && !(queen.status & 0x01)) {
+				queen.status |= 0x01;
+				if (queen.pos.second > 0) {
+					queen.pos.second--;
 				}
 			}
-			else if (buf[1] == 'D' && !(queen_status & 0x02)) {
-				queen_status |= 0x02;
-				if (queen_pos.second < 7) {
-					queen_pos.second++;
+			else if (buf[1] == 'D' && !(queen.status & 0x02)) {
+				queen.status |= 0x02;
+				if (queen.pos.second < 7) {
+					queen.pos.second++;
 				}
 			}
-			else if (buf[1] == 'L' && !(queen_status & 0x04)) {
-				queen_status |= 0x01;
-				if (queen_pos.first > 0) {
-					queen_pos.first--;
+			else if (buf[1] == 'L' && !(queen.status & 0x04)) {
+				queen.status |= 0x01;
+				if (queen.pos.first > 0) {
+					queen.pos.first--;
 				}
 			}
-			else if (buf[1] == 'R' && !(queen_status & 0x08)) {
-				queen_status |= 0x08;
-				if (queen_pos.first < 7) {
-					queen_pos.first++;
+			else if (buf[1] == 'R' && !(queen.status & 0x08)) {
+				queen.status |= 0x08;
+				if (queen.pos.first < 7) {
+					queen.pos.first++;
 				}
 			}
 		}
 		
 	}
 
-	void setBuffer()
+	void setSendBuffer(int data_id)
 	{
+		Queen queen = g_queens[data_id];
+
 		buf[0] = 'M';
-		buf[1] = queen_pos.first;
-		buf[2] = queen_pos.second;
+		buf[1] = queen.pos.first;
+		buf[2] = queen.pos.second;
 		send_size = 3;
 	}
 
 	// send message to all client
-	void broadcast()
+	void broadcast(int data_id)
 	{
-		for (auto& p : g_players)
-			p.second.do_send(g_session_map[&over], buf, send_size);
+		for (auto& p : g_players) {
+			p.second.setSendBuffer(data_id);
+			p.second.do_send(g_session_map[&over]);
+		}
 	}
 };
 
@@ -193,6 +209,8 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 		print_error("WSARecv", WSAGetLastError());
 	}
 	int my_id = g_session_map[pover];
+	Queen& queen = g_queens[my_id];
+
 	if (0 == recv_size) {
 		g_players.erase(my_id);
 		return;
@@ -203,13 +221,12 @@ void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 	// --
 
 	// TODO: 정보 처리
-	auto pos = queen_pos;
+	auto pos = queen.pos;
 
 	g_players[my_id].proccessMessage();
 
-	if (pos != queen_pos) {
-		g_players[my_id].setBuffer();
-		g_players[my_id].broadcast();
+	if (pos != queen.pos) {
+		g_players[my_id].broadcast(my_id);
 	}
 
 	g_players[my_id].do_recv();
@@ -243,8 +260,9 @@ int main()
 	while (false == b_shutdown) {
 		SOCKET client_s = WSAAccept(server_s, reinterpret_cast<sockaddr*>(&server_a), &addr_size, nullptr, 0);
 		g_players.try_emplace(id, client_s, id);
-		g_players[id].setBuffer();
-		g_players[id].do_send(id);
+		g_queens[id] = Queen{};
+
+		g_players[id].broadcast(id);
 		g_players[id++].do_recv();
 	}
 	g_players.clear();

@@ -33,7 +33,7 @@ private:
 	EXP_OVER send_exp;
 	EXP_OVER recv_exp;
 
-	std::queue<char*> message_queue;
+	std::queue<std::vector<char>> message_queue;
 
 public:
 	~CNetworkMgr();
@@ -45,7 +45,7 @@ public:
 	void doRecv();
 
 	void pushMessage();
-	char* popMessage();
+	const std::vector<char> popMessage();
 
 };
 

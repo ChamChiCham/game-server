@@ -250,14 +250,18 @@ public:
 
 	void processMessage()
 	{
-		char* message{ network_mgr.popMessage() };
-		while (message != nullptr) {
-			if (message[0] == 'Q') {
+		std::vector<char> message{ network_mgr.popMessage() };
+		while (!message.empty()) {
+			switch (message[2]) {
+			case 'Q':
 				PostQuitMessage(0);
-			}
-			if (message[0] == 'M') {
-				queen_pos = std::make_pair<int, int>(message[1], message[2]);
+				break;
+			case 'M':
+				queen_pos = std::make_pair<int, int>(message[3], message[4]);
 				move(queen_pos.first, queen_pos.second);
+				break;
+			default:
+				break;
 			}
 			message = network_mgr.popMessage();
 		}
