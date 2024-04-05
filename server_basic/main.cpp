@@ -3,6 +3,9 @@
 #include <unordered_map>
 #pragma comment (lib, "WS2_32.LIB")
 
+#include <MSWSock.h>
+#pragma comment(lib, "MSWSock.lib")
+
 constexpr short PORT = 4000;
 constexpr int BUFSIZE = 256;
 
@@ -10,25 +13,27 @@ bool b_shutdown = false;
 
 class SESSION;
 
-// { client Overlapped pointer : ID }
-std::unordered_map<LPWSAOVERLAPPED, int> g_session_map;
+std::unordered_map<ULONG_PTR, SESSION> g_players;
 
-// { ID : session }
-std::unordered_map<int, SESSION> g_players;
-
-void CALLBACK send_callback(DWORD, DWORD, LPWSAOVERLAPPED, DWORD);
-void CALLBACK recv_callback(DWORD, DWORD, LPWSAOVERLAPPED, DWORD);
 void print_error(const char* msg, int err_no);
 
-/**
-*  client에게 send하기 위해 동적으로 생성하는 send. 
-*/
+enum C_OP { C_RECV, C_SEND, C_ACCEPT };
+
 class EXP_OVER
 {
 public:
 	WSAOVERLAPPED over;
 	WSABUF wsabuf[1];
 	char buf[BUFSIZE];
+	C_OP	c_op;
+
+	EXP_OVER()
+	{
+		ZeroMemory(&over, sizeof(over));
+		wsabuf[0].buf = buf;
+		wsabuf[0].len = BUFSIZE;
+	}
+
 	EXP_OVER(int s_id, char* mess, int m_size)
 	{
 		ZeroMemory(&over, sizeof(over));
@@ -41,32 +46,24 @@ public:
 	}
 };
 
-/**
-* server에서 client에게 recv와 send를 해주는 session.
-*/
 class SESSION {
-	char buf[BUFSIZE];
-	WSABUF wsabuf[1];
+	EXP_OVER recv_over;
 	SOCKET client_s;
-	WSAOVERLAPPED over;
+	char c_id;
 public:
-	SESSION(SOCKET s, int my_id) : client_s(s) {
-		g_session_map[&over] = my_id;
-		wsabuf[0].buf = buf;
-		wsabuf[0].len = BUFSIZE;
+	SESSION(SOCKET s, char my_id) : client_s(s), c_id(my_id) {
+		recv_over.c_op = C_RECV;
 	}
 	SESSION() {
 		std::cout << "ERROR";
 		exit(-1);
 	}
 	~SESSION() { closesocket(client_s); }
-
-	// recv
 	void do_recv()
 	{
 		DWORD recv_flag = 0;
-		ZeroMemory(&over, sizeof(over));
-		int res = WSARecv(client_s, wsabuf, 1, nullptr, &recv_flag, &over, recv_callback);
+		ZeroMemory(&recv_over.over, sizeof(recv_over.over));
+		int res = WSARecv(client_s, recv_over.wsabuf, 1, nullptr, &recv_flag, &recv_over.over, nullptr);
 		if (0 != res) {
 			int err_no = WSAGetLastError();
 			if (WSA_IO_PENDING != err_no)
@@ -74,35 +71,31 @@ public:
 		}
 	}
 
-	// send
 	void do_send(int s_id, char* mess, int recv_size)
 	{
 		auto b = new EXP_OVER(s_id, mess, recv_size);
-		int res = WSASend(client_s, b->wsabuf, 1, nullptr, 0, &b->over, send_callback);
+		b->c_op = C_SEND;
+		int res = WSASend(client_s, b->wsabuf, 1, nullptr, 0, &b->over, nullptr);
 		if (0 != res) {
 			print_error("WSARecv", WSAGetLastError());
 		}
 	}
 
-	// handle message
 	void print_message(DWORD recv_size)
 	{
-		int my_id = g_session_map[&over];
-		std::cout << "Client[" << my_id << "] Sent : ";
+		std::cout << "Client[" << c_id << "] Sent : ";
 		for (DWORD i = 0; i < recv_size; ++i)
-			std::cout << buf[i];
+			std::cout << recv_over.buf[i];
 		std::cout << std::endl;
 	}
-	
-	// send message to all client
+
 	void broadcast(int m_size)
 	{
 		for (auto& p : g_players)
-			p.second.do_send(g_session_map[&over], buf, m_size);
+			p.second.do_send(p.first, recv_over.buf, m_size);
 	}
 };
 
-// 에러가 났을때 멈줘주는 함수.
 void print_error(const char* msg, int err_no)
 {
 	WCHAR* msg_buf;
@@ -116,7 +109,6 @@ void print_error(const char* msg, int err_no)
 	LocalFree(msg_buf);
 }
 
-// send 완료 후 실행되는 callback
 void CALLBACK send_callback(DWORD err, DWORD sent_size,
 	LPWSAOVERLAPPED pover, DWORD recv_flag)
 {
@@ -127,21 +119,10 @@ void CALLBACK send_callback(DWORD err, DWORD sent_size,
 	delete b;
 }
 
-// recv 완료 후 실행되는 callback
 void CALLBACK recv_callback(DWORD err, DWORD recv_size,
 	LPWSAOVERLAPPED pover, DWORD recv_flag)
 {
-	if (0 != err) {
-		print_error("WSARecv", WSAGetLastError());
-	}
-	int my_id = g_session_map[pover];
-	if (0 == recv_size) {
-		g_players.erase(my_id);
-		return;
-	}
-	g_players[my_id].print_message(recv_size);
-	g_players[my_id].broadcast(recv_size);
-	g_players[my_id].do_recv();
+	
 }
 
 int main()
@@ -149,31 +130,49 @@ int main()
 	std::wcout.imbue(std::locale("korean"));
 
 	WSADATA WSAData;
-	WSAStartup(MAKEWORD(2, 0), &WSAData);
-	
-	// create socker
+	WSAStartup(MAKEWORD(2, 2), &WSAData);
+
+	HANDLE h_iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0);
 	SOCKET server_s = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
-	
-	// bind
 	SOCKADDR_IN server_a;
 	server_a.sin_family = AF_INET;
 	server_a.sin_port = htons(PORT);
 	server_a.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
 	bind(server_s, reinterpret_cast<sockaddr*>(&server_a), sizeof(server_a));
-	
-	// listen
 	listen(server_s, SOMAXCONN);
-
-
 	int addr_size = sizeof(server_a);
 	int id = 0;
 
-	// accept client socket
-	while (false == b_shutdown) {
-		SOCKET client_s = WSAAccept(server_s, reinterpret_cast<sockaddr*>(&server_a), &addr_size, nullptr, 0);
-		g_players.try_emplace(id, client_s, id);
-		g_players[id++].do_recv();
+	SOCKET client_s = WSAAccept(server_s, reinterpret_cast<sockaddr*>(&server_a), &addr_size, nullptr, 0);
+	EXP_OVER accept_over;
+	ZeroMemory(&accept_over.over, sizeof(accept_over.over));
+	accept_over.c_op = C_ACCEPT;
+	CreateIoCompletionPort(reinterpret_cast<HANDLE>(server_s), h_iocp, -1, 0);
+	AcceptEx(server_s, client_s, accept_over.buf, 0, addr_size + 16, addr_size + 16, nullptr, &accept_over.over);
+
+	while (true) {
+		DWORD rw_byte;
+		ULONG_PTR key;
+		WSAOVERLAPPED over;
+		BOOL ref = GetQueuedCompletionStatus(h_iocp, );
+		switch () {
+
+		case C_RECV: {
+			int my_id = ;
+			if (0 == recv_size) {
+				g_players.erase(my_id);
+			}
+			g_players[my_id].print_message(recv_size);
+			g_players[my_id].broadcast(recv_size);
+			g_players[my_id].do_recv();
+			break;
+		case C_SEND:
+			break;
+
+
+		}
 	}
+
 	g_players.clear();
 	closesocket(server_s);
 	WSACleanup();

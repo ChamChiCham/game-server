@@ -6,3 +6,7 @@ client_basic/x64
 client_basic/.vs
 server_basic/x64
 server_basic/.vs
+client_new/x64
+client_new/.vs
+server_new/x64
+server_new/.vs
