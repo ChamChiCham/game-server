@@ -10,3 +10,5 @@ client_new/x64
 client_new/.vs
 server_new/x64
 server_new/.vs
+multithread_basic/x64
+multithread_basic/.vs
