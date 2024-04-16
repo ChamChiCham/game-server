@@ -24,7 +24,7 @@ void print_error(const char* msg, int err_no);
 
 struct Queen {
 	std::pair<unsigned char, unsigned char> pos{};
-	unsigned char status{};
+	int status{};
 };
 
 // { ID : Data }
@@ -87,8 +87,6 @@ public:
 			if (WSA_IO_PENDING != err_no)
 				print_error("WSARecv", WSAGetLastError());
 		}
-		std::cout << "recv" << buf[0] << buf[1] << buf[2] << std::endl;
-
 	}
 
 	// send
@@ -99,7 +97,7 @@ public:
 		if (0 != res) {
 			print_error("WSASend", WSAGetLastError());
 		}
-		std::cout << "recv" << buf[0] << buf[1] << buf[2] << std::endl;
+
 	}
 
 	void do_send(int s_id)
@@ -113,43 +111,42 @@ public:
 
 	void proccessMessage()
 	{
-		int id = g_session_map[&over];
-		Queen queen = g_queens[id];
+		Queen& queen = g_queens[buf[1]];
 
-		if (buf[0] == 'U') {
-			if (buf[1] == 'U') {
+		if (buf[2] == 'U') {
+			if (buf[3] == 'U') {
 				queen.status &= ~0x01;
 			}
-			else if (buf[1] == 'D') {
+			else if (buf[3] == 'D') {
 				queen.status &= ~0x02;
 			}
-			else if (buf[1] == 'L') {
+			else if (buf[3] == 'L') {
 				queen.status &= ~0x04;
 			}
-			else if (buf[1] == 'R') {
+			else if (buf[3] == 'R') {
 				queen.status &= ~0x08;
 			}
 		}
-		else if (buf[0] == 'D') {
-			if (buf[1] == 'U' && !(queen.status & 0x01)) {
+		else if (buf[2] == 'D') {
+			if (buf[3] == 'U' && !(queen.status & 0x01)) {
 				queen.status |= 0x01;
 				if (queen.pos.second > 0) {
 					queen.pos.second--;
 				}
 			}
-			else if (buf[1] == 'D' && !(queen.status & 0x02)) {
+			else if (buf[3] == 'D' && !(queen.status & 0x02)) {
 				queen.status |= 0x02;
 				if (queen.pos.second < 7) {
 					queen.pos.second++;
 				}
 			}
-			else if (buf[1] == 'L' && !(queen.status & 0x04)) {
+			else if (buf[3] == 'L' && !(queen.status & 0x04)) {
 				queen.status |= 0x01;
 				if (queen.pos.first > 0) {
 					queen.pos.first--;
 				}
 			}
-			else if (buf[1] == 'R' && !(queen.status & 0x08)) {
+			else if (buf[3] == 'R' && !(queen.status & 0x08)) {
 				queen.status |= 0x08;
 				if (queen.pos.first < 7) {
 					queen.pos.first++;
@@ -277,10 +274,10 @@ int main()
 		// 새로운 객체 알려주기 
 		g_players[id].broadcast(id);
 
-		//// client가 처음 들어왔을 때 모든 player의 정보를 해당 client에 전달
-		//for (auto& p : g_players) {
-		//	g_players[id].do_send(p.first);
-		//}
+		// client가 처음 들어왔을 때 모든 player의 정보를 해당 client에 전달
+		for (auto& p : g_players) {
+			g_players[id].do_send(p.first);
+		}
 
 		// recv 실행
 		g_players[id++].do_recv();
