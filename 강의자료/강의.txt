@@ -257,3 +257,38 @@ client는 Heterogenous
 thread 생성 시 초기자
 1. 함수 2. 람다 3. 실행객체
 
+==== 4/9 6.1 ====
+
+왜 5천만번 돌렸는데 0ms가 걸리는가?
+컴파일러가 루프를 돌지 않게끔 코드를 작성 -> volitile
++ CPU의 클럭 속도
+
+
+멀티스레드 사용했을 때 오히려 속도가 느려짐. -> lock의 부하.
+오히려 context switch때문에 thread가 많아질수록 느려짐.
+-> 적절한 Lock의 크기를 설정하는게 필요하다!!!
+
+멀스가 어려운 이유.
+성능을 끌어올리기가 어렵다.
+->  프로그램을 새로 짜야 한다.
+
+
+==== 4/12 6.2 ====
+
+7-8 사이
+c++20에서 사용하는 atomic<shared_ptr<T>>을 사용
+nonblocking이 아님 -> 많이 느림
+
+성능 저하의 원인: mutex와 reference counter
+-> 가급적이면 cosnt reference를 사용하자.
+전역변수에는 atomic을 사용하지 말자.
+
+map에 Session을 저장하는 데에는 필수.
+boost::aiso에서는 필수다.
+
+성능 저하를 감수할 만 한가?
+
+멤버변수를 하나하나 따져서 data race가 발생하는 멤버만 따로 락을 건다.
+
+
+

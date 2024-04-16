@@ -6,4 +6,7 @@
   <ItemGroup>
     <ClInclude Include="..\server_new\protocol.h" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
 </Project>
