@@ -20,13 +20,39 @@ using namespace std;
 
 constexpr int VIEW_RANGE = 5;
 
-enum EVENT_TYPE { EV_RANDOM_MOVE };
+enum EVENT_TYPE { EV_RANDOM_MOVE, EV_CHAT };
 
 struct TIMER_EVENT {
 	int obj_id;
 	chrono::system_clock::time_point wakeup_time;
 	EVENT_TYPE event_id;
 	int target_id;
+	char buf[BUF_SIZE];
+	
+	TIMER_EVENT() = default;
+
+	TIMER_EVENT(int obj_id,
+		chrono::system_clock::time_point wakeup_time,
+		EVENT_TYPE event_id,
+		int target_id)
+		: obj_id{ obj_id }
+		, wakeup_time{ wakeup_time }
+		, event_id{ event_id }
+		, buf{}
+	{}
+
+	TIMER_EVENT(int obj_id,
+		chrono::system_clock::time_point wakeup_time,
+		EVENT_TYPE event_id,
+		int target_id,
+		char* buf)
+		: obj_id{ obj_id }
+		, wakeup_time{ wakeup_time }
+		, event_id{ event_id }
+	{
+		memcpy(this->buf, buf, BUF_SIZE);
+	}
+	
 	constexpr bool operator < (const TIMER_EVENT& L) const
 	{
 		return (wakeup_time > L.wakeup_time);
@@ -36,8 +62,8 @@ concurrency::concurrent_priority_queue<TIMER_EVENT> timer_queue;
 
 constexpr int SECTOR_SIZE{ 10 };
 
-//std::mutex g_sl;
-//std::unordered_set<int> g_sector[W_HEIGHT / SECTOR_SIZE + 1][W_WIDTH / SECTOR_SIZE + 1];
+std::mutex g_sl;
+std::unordered_set<int> g_sectors[W_HEIGHT / SECTOR_SIZE + 1][W_WIDTH / SECTOR_SIZE + 1];
 
 
 enum COMP_TYPE { OP_ACCEPT, OP_RECV, OP_SEND, OP_NPC_MOVE, OP_PLAYER_MOVE };
@@ -285,6 +311,11 @@ void WakeUpNPC(int npc_id, int waker)
 	timer_queue.push(ev);
 }
 
+bool is_sector(int y, int x)
+{
+	return 0 <= y && y < W_HEIGHT / SECTOR_SIZE + 1 && 0 <= x && x <= W_WIDTH / SECTOR_SIZE + 1;
+}
+
 void process_packet(int c_id, char* packet)
 {
 	// packet[0]에는 크기. packet[1]에는 타입이 있음.
@@ -305,25 +336,39 @@ void process_packet(int c_id, char* packet)
 		// 클라이언트에 로그인 정보를 준다.
 		clients[c_id].send_login_info_packet();
 		
+		{
+			lock_guard<mutex> ll{ g_sl };
+			g_sectors[clients[c_id].y / SECTOR_SIZE][clients[c_id].x / SECTOR_SIZE].insert(c_id);
+		}
+
 		// 시야처리
 		// TODO: SECTOR화
-		for (auto& pl : clients) {
-			{
-				lock_guard<mutex> ll(pl._s_lock);
-				// 인게임이 아니면 패스
-				if (ST_INGAME != pl._state) continue;
-			}
-			// 자기 자신이면 패스
-			if (pl._id == c_id) continue;
-			// 볼수 없으면 패스
-			if (false == can_see(c_id, pl._id)) continue;
-			// 플레이어면 플레이어 추가
-			if (is_pc(pl._id)) pl.send_add_player_packet(c_id);
-			// NPC를 깨움
-			else WakeUpNPC(pl._id, c_id);
+		for (int i = -1; i <= 1; ++i) {
+			for (int j = -1; j <= 1; ++j) {
+				if (!is_sector(clients[c_id].y / SECTOR_SIZE + i, clients[c_id].x / SECTOR_SIZE + j)) {
+					continue;
+				}
+				auto& sector = g_sectors[clients[c_id].y / SECTOR_SIZE + i][clients[c_id].x / SECTOR_SIZE + j];
+				for (const auto& id : sector) {
+					auto& pl = clients[id];
+					{
+						lock_guard<mutex> ll(pl._s_lock);
+						// 인게임이 아니면 패스
+						if (ST_INGAME != pl._state) continue;
+					}
+					// 자기 자신이면 패스
+					if (pl._id == c_id) continue;
+					// 볼수 없으면 패스
+					if (false == can_see(c_id, pl._id)) continue;
+					// 플레이어면 플레이어 추가
+					if (is_pc(pl._id)) pl.send_add_player_packet(c_id);
+					// NPC를 깨움
+					else WakeUpNPC(pl._id, c_id);
 
-			// 새로 로그인한 세션에도 전달
-			clients[c_id].send_add_player_packet(pl._id);
+					// 새로 로그인한 세션에도 전달
+					clients[c_id].send_add_player_packet(pl._id);
+				}
+			}
 		}
 		break;
 	}
@@ -342,8 +387,19 @@ void process_packet(int c_id, char* packet)
 		case 2: if (x > 0) x--; break;
 		case 3: if (x < W_WIDTH - 1) x++; break;
 		}
+
+		// added
+		if (clients[c_id].y / SECTOR_SIZE != y / SECTOR_SIZE || clients[c_id].x / SECTOR_SIZE != x / SECTOR_SIZE)
+		{
+			lock_guard<mutex> ll{ g_sl };
+			g_sectors[clients[c_id].y / SECTOR_SIZE][clients[c_id].x / SECTOR_SIZE].erase(c_id);
+			g_sectors[y / SECTOR_SIZE][x / SECTOR_SIZE].insert(c_id);
+		}
+
 		clients[c_id].x = x;
 		clients[c_id].y = y;
+
+
 
 		// 새 near_list
 		unordered_set<int> near_list;
@@ -353,14 +409,23 @@ void process_packet(int c_id, char* packet)
 		clients[c_id]._vl.unlock();
 
 		// TODO: SECTORING
-		for (auto& cl : clients) {
-			// 인게임이 아니면 패스
-			if (cl._state != ST_INGAME) continue;
-			// 본인이면 패스
-			if (cl._id == c_id) continue;
-			// 일단 지금 볼수 있으면 새로운 near list에 추가
-			if (can_see(c_id, cl._id))
-				near_list.insert(cl._id);
+		for (int i = -1; i <= 1; ++i) {
+			for (int j = -1; j <= 1; ++j) {
+				if (!is_sector(clients[c_id].y / SECTOR_SIZE + i, clients[c_id].x / SECTOR_SIZE + j)) {
+					continue;
+				}
+				auto& sector = g_sectors[clients[c_id].y / SECTOR_SIZE + i][clients[c_id].x / SECTOR_SIZE + j];
+				for (const auto& id : sector) {
+					auto& cl = clients[id];
+					// 인게임이 아니면 패스
+					if (cl._state != ST_INGAME) continue;
+					// 본인이면 패스
+					if (cl._id == c_id) continue;
+					// 일단 지금 볼수 있으면 새로운 near list에 추가
+					if (can_see(c_id, cl._id))
+						near_list.insert(cl._id);
+				}
+			}
 		}
 
 		clients[c_id].send_move_packet(c_id);
@@ -446,6 +511,13 @@ void do_npc_random_move(int npc_id)
 	case 2: if (y < (W_HEIGHT - 1)) y++; break;
 	case 3:if (y > 0) y--; break;
 	}
+
+	if (clients[npc_id].y / SECTOR_SIZE != y / SECTOR_SIZE || clients[npc_id].x / SECTOR_SIZE != x / SECTOR_SIZE)
+	{
+		lock_guard<mutex> ll{ g_sl };
+		g_sectors[clients[npc_id].y / SECTOR_SIZE][clients[npc_id].x / SECTOR_SIZE].erase(npc_id);
+		g_sectors[y / SECTOR_SIZE][x / SECTOR_SIZE].insert(npc_id);
+	}
 	npc.x = x;
 	npc.y = y;
 
@@ -453,12 +525,23 @@ void do_npc_random_move(int npc_id)
 
 	// 시야 처리
 	// TODO: sectoring 구현으로 최적화
-	for (auto& obj : clients) {
-		if (ST_INGAME != obj._state) continue;
-		if (true == is_npc(obj._id)) continue;
-		if (true == can_see(npc._id, obj._id))
-			new_vl.insert(obj._id);
+	for (int i = -1; i <= 1; ++i) {
+		for (int j = -1; j <= 1; ++j) {
+			if (!is_sector(clients[npc_id].y / SECTOR_SIZE + i, clients[npc_id].x / SECTOR_SIZE + j)) {
+				continue;
+			}
+			auto& sector = g_sectors[clients[npc_id].y / SECTOR_SIZE + i][clients[npc_id].x / SECTOR_SIZE + j];
+			for (const auto& id : sector) {
+				auto& obj = clients[id];
+				if (ST_INGAME != obj._state) continue;
+				if (true == is_npc(obj._id)) continue;
+				if (true == can_see(npc._id, obj._id))
+					new_vl.insert(obj._id);
+				
+			}
+		}
 	}
+
 
 	for (auto pl : new_vl) {
 		if (0 == old_vl.count(pl)) {
@@ -659,24 +742,34 @@ int API_SendMessage(lua_State* L)
 
 int API_move_random_dir(lua_State* L)
 {
-	int my_id = (int)lua_tointeger(L, -1);
+	int my_id = (int)lua_tointeger(L, -3);
+	int count = (int)lua_tointeger(L, -2);
+	int time = (int)lua_tointeger(L, -1);
 	
-	TIMER_EVENT ev{ my_id, chrono::system_clock::now(), EV_RANDOM_MOVE, 0 };
+	for (int i{}; i < count; ++i) {
+		TIMER_EVENT ev{ my_id, chrono::system_clock::now() + chrono::milliseconds(time) * i, EV_RANDOM_MOVE, 0 };
+		timer_queue.push(ev);
+	}
+
+	lua_pop(L, 4);
+	return 0;
+}
+
+int API_SendMessageTimer(lua_State* L)
+{
+	int my_id = (int)lua_tointeger(L, -4);
+	int user_id = (int)lua_tointeger(L, -3);
+	char* mess = (char*)lua_tostring(L, -2);
+	int time = (int)lua_tointeger(L, -1);
+
+	lua_pop(L, 5);
+
+	TIMER_EVENT ev{ my_id, chrono::system_clock::now() + chrono::milliseconds(time), EV_CHAT, user_id, mess};
 	timer_queue.push(ev);
 
-	lua_pop(L, 2);
+
 	return 0;
 }
-
-int API_sleep(lua_State* L)
-{
-	int wait_time = (int)lua_tointeger(L, -1);
-	this_thread::sleep_for(chrono::milliseconds(wait_time));
-	lua_pop(L, 2);
-	return 0;
-}
-
-
 
 void InitializeNPC()
 {
@@ -706,8 +799,11 @@ void InitializeNPC()
 		lua_register(L, "API_get_x", API_get_x);
 		lua_register(L, "API_get_y", API_get_y);
 		lua_register(L, "API_move_random_dir", API_move_random_dir);
-		lua_register(L, "API_sleep", API_sleep);
+		lua_register(L, "API_SendMessageTimer", API_SendMessageTimer);
+
+		g_sectors[clients[i].y / SECTOR_SIZE][clients[i].x / SECTOR_SIZE].insert(i);
 	}
+
 	cout << "NPC initialize end.\n";
 }
 
@@ -725,10 +821,17 @@ void do_timer()
 			}
 			switch (ev.event_id) {
 			case EV_RANDOM_MOVE:
+			{
 				OVER_EXP* ov = new OVER_EXP;
 				ov->_comp_type = OP_NPC_MOVE;
 				PostQueuedCompletionStatus(h_iocp, 1, ev.obj_id, &ov->_over);
 				break;
+			}
+			case EV_CHAT:
+			{
+				clients[ev.target_id].send_chat_packet(ev.obj_id, ev.buf);
+				break;
+			}
 			}
 			continue;		// 즉시 다음 작업 꺼내기
 		}
