@@ -12,6 +12,11 @@ function event_player_move(player)
    if (player_x == my_x) then
       if (player_y == my_y) then
          API_SendMessage(myid, player, "HELLO");
+         for i=1,3 do
+            API_sleep(1000);
+            API_move_random_dir(myid);
+         end
+         API_SendMessage(myid, player, "BYE");
       end
    end
 end

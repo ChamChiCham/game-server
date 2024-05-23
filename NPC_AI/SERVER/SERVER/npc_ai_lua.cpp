@@ -7,6 +7,7 @@
 #include <mutex>
 #include <unordered_set>
 #include <concurrent_priority_queue.h>
+
 #include "protocol.h"
 
 #include "include/lua.hpp"
@@ -32,6 +33,12 @@ struct TIMER_EVENT {
 	}
 };
 concurrency::concurrent_priority_queue<TIMER_EVENT> timer_queue;
+
+constexpr int SECTOR_SIZE{ 10 };
+
+//std::mutex g_sl;
+//std::unordered_set<int> g_sector[W_HEIGHT / SECTOR_SIZE + 1][W_WIDTH / SECTOR_SIZE + 1];
+
 
 enum COMP_TYPE { OP_ACCEPT, OP_RECV, OP_SEND, OP_NPC_MOVE, OP_PLAYER_MOVE };
 class OVER_EXP {
@@ -592,8 +599,8 @@ void worker_thread(HANDLE h_iocp)
 				do_npc_random_move(static_cast<int>(key));
 
 				// 타이머 이벤트 생성
-				TIMER_EVENT ev{ key, chrono::system_clock::now() + 1s, EV_RANDOM_MOVE, 0 };
-				timer_queue.push(ev);
+				//TIMER_EVENT ev{ key, chrono::system_clock::now() + 1s, EV_RANDOM_MOVE, 0 };
+				//timer_queue.push(ev);
 			}
 			else {
 				clients[key]._is_active = false;
@@ -650,6 +657,25 @@ int API_SendMessage(lua_State* L)
 	return 0;
 }
 
+int API_move_random_dir(lua_State* L)
+{
+	int my_id = (int)lua_tointeger(L, -1);
+	
+	TIMER_EVENT ev{ my_id, chrono::system_clock::now(), EV_RANDOM_MOVE, 0 };
+	timer_queue.push(ev);
+
+	lua_pop(L, 2);
+	return 0;
+}
+
+int API_sleep(lua_State* L)
+{
+	int wait_time = (int)lua_tointeger(L, -1);
+	this_thread::sleep_for(chrono::milliseconds(wait_time));
+	lua_pop(L, 2);
+	return 0;
+}
+
 
 
 void InitializeNPC()
@@ -679,6 +705,8 @@ void InitializeNPC()
 		lua_register(L, "API_SendMessage", API_SendMessage);
 		lua_register(L, "API_get_x", API_get_x);
 		lua_register(L, "API_get_y", API_get_y);
+		lua_register(L, "API_move_random_dir", API_move_random_dir);
+		lua_register(L, "API_sleep", API_sleep);
 	}
 	cout << "NPC initialize end.\n";
 }
