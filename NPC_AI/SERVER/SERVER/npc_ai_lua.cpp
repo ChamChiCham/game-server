@@ -59,23 +59,43 @@ public:
 };
 
 enum S_STATE { ST_FREE, ST_ALLOC, ST_INGAME };
+
+
 class SESSION {
 	OVER_EXP _recv_over;
 
 public:
-	mutex _s_lock;
-	S_STATE _state;
-	atomic_bool	_is_active;		// 주위에 플레이어가 있는가?
-	int _id;
-	SOCKET _socket;
-	short	x, y;
-	char	_name[NAME_SIZE];
-	int		_prev_remain;
+
+	// 상태 뮤텍스
+	mutex		_s_lock;
+	// 상태 (FREE, ALLOC, INGAME)
+	S_STATE		_state;
+
+	// 주위에 플레이어가 있는가? / ai를 위한 멤버변수
+	atomic_bool	_is_active;
+
+	// 객체 정보
+	int			_id;
+	SOCKET		_socket;
+	short		x, y;
+	char		_name[NAME_SIZE];
+
+	// 패킷 재조립을 위한 남은 데이터 수 저장
+	int			_prev_remain;
+
+	// view list.
 	unordered_set <int> _view_list;
-	mutex	_vl;
-	int		last_move_time;
-	lua_State* _L;
-	mutex	_ll;
+	// view list 뮤텍스
+	mutex				_vl;
+
+	// ai heartbeat를 위한 마지막 이동시간 저장
+	int			last_move_time;
+
+	// 루아 상태머신. 객체당 하나씩 저장
+	lua_State*	_L;
+	// 루아 상태머신 뮤텍스
+	mutex		_ll;
+
 public:
 	SESSION()
 	{
@@ -135,7 +155,12 @@ public:
 	}
 };
 
+// IOCP 객체
 HANDLE h_iocp;
+
+// 2번째 방법
+// clients 컨테이너는 User와 NPC로 구성되어 있다.
+// (앞부분 USER + 뒷부분 NPC)
 array<SESSION, MAX_USER + MAX_NPC> clients;
 
 // NPC 구현 첫번째 방법
@@ -160,9 +185,15 @@ array<SESSION, MAX_USER + MAX_NPC> clients;
 //          (포인터로 관리되므로 player id의 중복사용 방지를 구현하기 쉬워진다 => Data Race 방지를 위한 추가 구현이 필요)
 //      단점 : 포인터가 사용되고, reinterpret_cast가 필요하다. (별로 단점이 안니다).
 
-SOCKET g_s_socket, g_c_socket;
-OVER_EXP g_a_over;
+// 서버 socket
+SOCKET g_s_socket;
 
+// 비동기 accept를 위한 socket
+SOCKET g_c_socket;
+
+// 비동기 accept를 위한 overlapped 구조체
+OVER_EXP g_a_over;
+ 
 bool is_pc(int object_id)
 {
 	return object_id < MAX_USER;
@@ -179,6 +210,7 @@ bool can_see(int from, int to)
 	return abs(clients[from].y - clients[to].y) <= VIEW_RANGE;
 }
 
+
 void SESSION::send_move_packet(int c_id)
 {
 	SC_MOVE_OBJECT_PACKET p;
@@ -191,6 +223,7 @@ void SESSION::send_move_packet(int c_id)
 	do_send(&p);
 }
 
+// 시야에 플레이어가 들어올 때 플레이어 추가
 void SESSION::send_add_player_packet(int c_id)
 {
 	SC_ADD_OBJECT_PACKET add_packet;
@@ -200,9 +233,13 @@ void SESSION::send_add_player_packet(int c_id)
 	add_packet.type = SC_ADD_OBJECT;
 	add_packet.x = clients[c_id].x;
 	add_packet.y = clients[c_id].y;
+
+	// 뷰 리스트 추가
 	_vl.lock();
 	_view_list.insert(c_id);
 	_vl.unlock();
+
+	// send
 	do_send(&add_packet);
 }
 
@@ -243,9 +280,13 @@ void WakeUpNPC(int npc_id, int waker)
 
 void process_packet(int c_id, char* packet)
 {
+	// packet[0]에는 크기. packet[1]에는 타입이 있음.
 	switch (packet[1]) {
 	case CS_LOGIN: {
+		// 패킷 재해석
 		CS_LOGIN_PACKET* p = reinterpret_cast<CS_LOGIN_PACKET*>(packet);
+		
+		// 세션 초기화
 		strcpy_s(clients[c_id]._name, p->name);
 		{
 			lock_guard<mutex> ll{ clients[c_id]._s_lock };
@@ -253,24 +294,39 @@ void process_packet(int c_id, char* packet)
 			clients[c_id].y = rand() % W_HEIGHT;
 			clients[c_id]._state = ST_INGAME;
 		}
+
+		// 클라이언트에 로그인 정보를 준다.
 		clients[c_id].send_login_info_packet();
+		
+		// 시야처리
+		// TODO: SECTOR화
 		for (auto& pl : clients) {
 			{
 				lock_guard<mutex> ll(pl._s_lock);
+				// 인게임이 아니면 패스
 				if (ST_INGAME != pl._state) continue;
 			}
+			// 자기 자신이면 패스
 			if (pl._id == c_id) continue;
-			if (false == can_see(c_id, pl._id))
-				continue;
+			// 볼수 없으면 패스
+			if (false == can_see(c_id, pl._id)) continue;
+			// 플레이어면 플레이어 추가
 			if (is_pc(pl._id)) pl.send_add_player_packet(c_id);
+			// NPC를 깨움
 			else WakeUpNPC(pl._id, c_id);
+
+			// 새로 로그인한 세션에도 전달
 			clients[c_id].send_add_player_packet(pl._id);
 		}
 		break;
 	}
 	case CS_MOVE: {
 		CS_MOVE_PACKET* p = reinterpret_cast<CS_MOVE_PACKET*>(packet);
+		
+		// 마지막 move time 갱신
 		clients[c_id].last_move_time = p->move_time;
+
+		// 위치 설정
 		short x = clients[c_id].x;
 		short y = clients[c_id].y;
 		switch (p->direction) {
@@ -282,39 +338,56 @@ void process_packet(int c_id, char* packet)
 		clients[c_id].x = x;
 		clients[c_id].y = y;
 
+		// 새 near_list
 		unordered_set<int> near_list;
+		// 기존 클라이언트가 가지고 있는 near_list
 		clients[c_id]._vl.lock();
 		unordered_set<int> old_vlist = clients[c_id]._view_list;
 		clients[c_id]._vl.unlock();
+
+		// TODO: SECTORING
 		for (auto& cl : clients) {
+			// 인게임이 아니면 패스
 			if (cl._state != ST_INGAME) continue;
+			// 본인이면 패스
 			if (cl._id == c_id) continue;
+			// 일단 지금 볼수 있으면 새로운 near list에 추가
 			if (can_see(c_id, cl._id))
 				near_list.insert(cl._id);
 		}
 
 		clients[c_id].send_move_packet(c_id);
 
+		// 새로운 near_list
 		for (auto& pl : near_list) {
+			// 클라이언트 참조자 cpl
 			auto& cpl = clients[pl];
+
+			// pl이 플레이어라면
 			if (is_pc(pl)) {
 				cpl._vl.lock();
+
+				// c_id가 pl의 기존 vl에 있을 경우
 				if (clients[pl]._view_list.count(c_id)) {
 					cpl._vl.unlock();
 					clients[pl].send_move_packet(c_id);
 				}
+				// 기존 vl에 없을 경우
 				else {
 					cpl._vl.unlock();
 					clients[pl].send_add_player_packet(c_id);
 				}
 			}
+			// NPC라면 깨움.
 			else WakeUpNPC(pl, c_id);
 
+			// c_id의 기존 vl에 pl이 없을 경우 추가함
 			if (old_vlist.count(pl) == 0)
 				clients[c_id].send_add_player_packet(pl);
 		}
 
 		for (auto& pl : old_vlist)
+			// old_vieew에 있는데 new_vl에 없을 경우 삭제
 			if (0 == near_list.count(pl)) {
 				clients[c_id].send_remove_player_packet(pl);
 				if (is_pc(pl))
@@ -348,6 +421,7 @@ void disconnect(int c_id)
 
 void do_npc_random_move(int npc_id)
 {
+	// 이동 구현.
 	SESSION& npc = clients[npc_id];
 	unordered_set<int> old_vl;
 	for (auto& obj : clients) {
@@ -370,7 +444,8 @@ void do_npc_random_move(int npc_id)
 
 	unordered_set<int> new_vl;
 
-	// sectoring 구현으로 최적화
+	// 시야 처리
+	// TODO: sectoring 구현으로 최적화
 	for (auto& obj : clients) {
 		if (ST_INGAME != obj._state) continue;
 		if (true == is_npc(obj._id)) continue;
@@ -388,7 +463,8 @@ void do_npc_random_move(int npc_id)
 			clients[pl].send_move_packet(npc._id);
 		}
 	}
-	///vvcxxccxvvdsvdvds
+
+	// old_vl에 있는데 new에 없으면 삭제
 	for (auto pl : old_vl) {
 		if (0 == new_vl.count(pl)) {
 			clients[pl]._vl.lock();
@@ -409,8 +485,16 @@ void worker_thread(HANDLE h_iocp)
 		DWORD num_bytes;
 		ULONG_PTR key;
 		WSAOVERLAPPED* over = nullptr;
+		// 완료된 Accept iocp 객체에서 정보를 꺼내온다.
+		// num_bytes:	도착한 글자수
+		// key:			세션의 id
+		// over:		overlapped 구조체로 전달받음
 		BOOL ret = GetQueuedCompletionStatus(h_iocp, &num_bytes, &key, &over, INFINITE);
+		
+		// 전달받은 overlapped 구조체를 OVER_EXP로 표현.
 		OVER_EXP* ex_over = reinterpret_cast<OVER_EXP*>(over);
+
+		// 오류 처리
 		if (FALSE == ret) {
 			if (ex_over->_comp_type == OP_ACCEPT) cout << "Accept Error";
 			else {
@@ -420,17 +504,21 @@ void worker_thread(HANDLE h_iocp)
 				continue;
 			}
 		}
-
 		if ((0 == num_bytes) && ((ex_over->_comp_type == OP_RECV) || (ex_over->_comp_type == OP_SEND))) {
 			disconnect(static_cast<int>(key));
 			if (ex_over->_comp_type == OP_SEND) delete ex_over;
 			continue;
 		}
 
+		// 마치 non-blocking의 callback 함수처럼 동작함.
 		switch (ex_over->_comp_type) {
+		
+		// 새로운 클라이언트 연결
 		case OP_ACCEPT: {
 			int client_id = get_new_client_id();
 			if (client_id != -1) {
+
+				// 세션 간단 초기화 후 recv하도록 함.
 				{
 					lock_guard<mutex> ll(clients[client_id]._s_lock);
 					clients[client_id]._state = ST_ALLOC;
@@ -444,6 +532,8 @@ void worker_thread(HANDLE h_iocp)
 				CreateIoCompletionPort(reinterpret_cast<HANDLE>(g_c_socket),
 					h_iocp, client_id, 0);
 				clients[client_id].do_recv();
+
+				// 비동기 소켓을 새로운 소켓으로 만듦.
 				g_c_socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 			}
 			else {
@@ -451,10 +541,15 @@ void worker_thread(HANDLE h_iocp)
 			}
 			ZeroMemory(&g_a_over._over, sizeof(g_a_over._over));
 			int addr_size = sizeof(SOCKADDR_IN);
+
+			// 다시 비동기 accept
 			AcceptEx(g_s_socket, g_c_socket, g_a_over._send_buf, 0, addr_size + 16, addr_size + 16, 0, &g_a_over._over);
 			break;
 		}
+		
 		case OP_RECV: {
+
+			// 패킷 재조립
 			int remain_data = num_bytes + clients[key]._prev_remain;
 			char* p = ex_over->_send_buf;
 			while (remain_data > 0) {
@@ -470,14 +565,20 @@ void worker_thread(HANDLE h_iocp)
 			if (remain_data > 0) {
 				memcpy(ex_over->_send_buf, p, remain_data);
 			}
+
+			// 다시 받음
 			clients[key].do_recv();
 			break;
 		}
 		case OP_SEND:
+			// 동적할당한 overlapped 구조체 제거
 			delete ex_over;
 			break;
+
 		case OP_NPC_MOVE: {
 			bool keep_alive = false;
+
+			// 유저 세션 검색
 			for (int j = 0; j < MAX_USER; ++j) {
 				if (clients[j]._state != ST_INGAME) continue;
 				if (can_see(static_cast<int>(key), j)) {
@@ -485,14 +586,20 @@ void worker_thread(HANDLE h_iocp)
 					break;
 				}
 			}
+
 			if (true == keep_alive) {
+				// 실제로 이동
 				do_npc_random_move(static_cast<int>(key));
+
+				// 타이머 이벤트 생성
 				TIMER_EVENT ev{ key, chrono::system_clock::now() + 1s, EV_RANDOM_MOVE, 0 };
 				timer_queue.push(ev);
 			}
 			else {
 				clients[key]._is_active = false;
 			}
+
+			// 생성한 overlapped 구조체 삭제
 			delete ex_over;
 		}
 						break;
@@ -507,7 +614,6 @@ void worker_thread(HANDLE h_iocp)
 			delete ex_over;
 		}
 						   break;
-
 		}
 	}
 }
@@ -544,16 +650,21 @@ int API_SendMessage(lua_State* L)
 	return 0;
 }
 
+
+
 void InitializeNPC()
 {
 	cout << "NPC intialize begin.\n";
 	for (int i = MAX_USER; i < MAX_USER + MAX_NPC; ++i) {
+
+		// state 설정
 		clients[i].x = rand() % W_WIDTH;
 		clients[i].y = rand() % W_HEIGHT;
 		clients[i]._id = i;
 		sprintf_s(clients[i]._name, "NPC%d", i);
 		clients[i]._state = ST_INGAME;
 
+		// 루아 상태머신 생성
 		auto L = clients[i]._L = luaL_newstate();
 		luaL_openlibs(L);
 		luaL_loadfile(L, "npc.lua");
@@ -564,6 +675,7 @@ void InitializeNPC()
 		lua_pcall(L, 1, 0, 0);
 		// lua_pop(L, 1);// eliminate set_uid from stack after call
 
+		// c++ API 등록
 		lua_register(L, "API_SendMessage", API_SendMessage);
 		lua_register(L, "API_get_x", API_get_x);
 		lua_register(L, "API_get_y", API_get_y);
@@ -611,22 +723,38 @@ int main()
 	SOCKADDR_IN cl_addr;
 	int addr_size = sizeof(cl_addr);
 
+	// npc 초기화
 	InitializeNPC();
 
+	// iocp 객체 생성
 	h_iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0);
+
+	// 서버 소켓에 연결
 	CreateIoCompletionPort(reinterpret_cast<HANDLE>(g_s_socket), h_iocp, 9999, 0);
+
+	// Accept를 위한 클라이언트 소켓 하나 생성. 
 	g_c_socket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 	g_a_over._comp_type = OP_ACCEPT;
+	
+	// 비동기 Accept
 	AcceptEx(g_s_socket, g_c_socket, g_a_over._send_buf, 0, addr_size + 16, addr_size + 16, 0, &g_a_over._over);
 
-	vector <thread> worker_threads;
+	// worker thread 생성
+	vector<thread> worker_threads;
 	int num_threads = std::thread::hardware_concurrency();
 	for (int i = 0; i < num_threads; ++i)
 		worker_threads.emplace_back(worker_thread, h_iocp);
+
+	// timer thread 생성
 	thread timer_thread{ do_timer };
+
+	// timer thread 종료
 	timer_thread.join();
+
+	// worker thread 종료
 	for (auto& th : worker_threads)
 		th.join();
+	
 	closesocket(g_s_socket);
 	WSACleanup();
 }
