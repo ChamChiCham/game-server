@@ -38,6 +38,7 @@ struct TIMER_EVENT {
 		: obj_id{ obj_id }
 		, wakeup_time{ wakeup_time }
 		, event_id{ event_id }
+		, target_id{target_id}
 		, buf{}
 	{}
 
@@ -48,6 +49,7 @@ struct TIMER_EVENT {
 		char* buf)
 		: obj_id{ obj_id }
 		, wakeup_time{ wakeup_time }
+		, target_id{target_id}
 		, event_id{ event_id }
 	{
 		memcpy(this->buf, buf, BUF_SIZE);
@@ -682,8 +684,8 @@ void worker_thread(HANDLE h_iocp)
 				do_npc_random_move(static_cast<int>(key));
 
 				// 타이머 이벤트 생성
-				//TIMER_EVENT ev{ key, chrono::system_clock::now() + 1s, EV_RANDOM_MOVE, 0 };
-				//timer_queue.push(ev);
+				TIMER_EVENT ev{ static_cast<int>(key), chrono::system_clock::now() + 1s, EV_RANDOM_MOVE, 0 };
+				timer_queue.push(ev);
 			}
 			else {
 				clients[key]._is_active = false;
@@ -695,11 +697,30 @@ void worker_thread(HANDLE h_iocp)
 						break;
 		case OP_PLAYER_MOVE: {
 			clients[key]._ll.lock();
+
+			// LUA를 사용할 때 코드
 			auto L = clients[key]._L;
 			lua_getglobal(L, "event_player_move");
 			lua_pushnumber(L, ex_over->_ai_target_obj);
 			lua_pcall(L, 1, 0, 0);
 			//lua_pop(L, 1);
+
+			//// LUA를 사용하지 않을 때 코드
+			//auto& ml = clients[key];
+			//auto& pl = clients[ex_over->_ai_target_obj];
+
+			//if (ml.x == pl.x && ml.y == pl.y) {
+			//	clients[ex_over->_ai_target_obj].send_chat_packet(static_cast<int>(key), "HELLO");
+
+			//	for (int i{}; i < 3; ++i) {
+			//		TIMER_EVENT ev{ static_cast<int>(key), chrono::system_clock::now() + chrono::milliseconds(1000) * i, EV_RANDOM_MOVE, 0 };
+			//		timer_queue.push(ev);
+			//	}
+			//	TIMER_EVENT ev{ static_cast<int>(key), chrono::system_clock::now() + chrono::milliseconds(1000), EV_CHAT, ex_over->_ai_target_obj };
+			//	strcpy_s(ev.buf, "BYE");
+			//	timer_queue.push(ev);
+			//}
+			
 			clients[key]._ll.unlock();
 			delete ex_over;
 		}
@@ -762,11 +783,12 @@ int API_SendMessageTimer(lua_State* L)
 	char* mess = (char*)lua_tostring(L, -2);
 	int time = (int)lua_tointeger(L, -1);
 
-	lua_pop(L, 5);
+	TIMER_EVENT ev{ my_id, chrono::system_clock::now() + chrono::milliseconds(time), EV_CHAT, user_id};
+	strcpy_s(ev.buf, mess);
 
-	TIMER_EVENT ev{ my_id, chrono::system_clock::now() + chrono::milliseconds(time), EV_CHAT, user_id, mess};
 	timer_queue.push(ev);
-
+	
+	lua_pop(L, 5);
 
 	return 0;
 }
